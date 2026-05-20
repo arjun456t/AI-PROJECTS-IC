@@ -598,6 +598,37 @@ function getSuperLeague(topN) {
 }
 
 /**
+ * getSuperLeagueData(topN)
+ * Single call that returns per-division:
+ *   - qualifiedTeams  (from group stage standings)
+ *   - slStandings     (from the Super League sheet — empty if no matches yet)
+ *
+ * @param {number} topN  Teams to pick per group (default 2)
+ * @returns {Array}  [{division, pools, topN, qualifiedTeams, slPoolName, slStandings}, ...]
+ */
+function getSuperLeagueData(topN) {
+  var qualData = getSuperLeague(topN || 2);
+  var result   = [];
+
+  qualData.forEach(function(div) {
+    var slPoolName  = div.division.replace('Division', 'Div') + ' Super League';
+    var slStandings = [];
+    try { slStandings = getStandings(slPoolName); } catch (e) {}
+
+    result.push({
+      division:       div.division,
+      pools:          div.pools,
+      topN:           div.topN,
+      qualifiedTeams: div.qualifiedTeams,
+      slPoolName:     slPoolName,
+      slStandings:    slStandings
+    });
+  });
+
+  return result;
+}
+
+/**
  * getSuperLeagueQualified(divisionName, topN)
  * Returns the team names and sheet/pool name for a specific super league division.
  * Used to populate the admin team-entry dropdowns.

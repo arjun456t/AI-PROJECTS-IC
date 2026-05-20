@@ -2545,7 +2545,7 @@ function loadSuperLeague() {
       document.getElementById('slContent').innerHTML =
         '<div class="alert alert-danger">Error: ' + escHtml(err.message) + '</div>';
     })
-    .getSuperLeague(topN);
+    .getSuperLeagueData(topN);
 }
 
 function renderSuperLeague(divisions) {
@@ -2554,26 +2554,65 @@ function renderSuperLeague(divisions) {
     return;
   }
   var html = '';
+
   divisions.forEach(function(div) {
+    var hasSlMatches = div.slStandings && div.slStandings.length > 0 && div.slStandings.some(function(t) { return t.p > 0; });
+
     html += '<div class="card mb-4 shadow-sm">';
-    html += '<div class="card-header fw-bold" style="background:linear-gradient(135deg,#1a1a2e,#0f3460);color:white;">';
+    html += '<div class="card-header fw-bold d-flex align-items-center gap-2" style="background:linear-gradient(135deg,#1a1a2e,#0f3460);color:white;">';
     html += '🏆 ' + escHtml(div.division) + ' Super League';
-    html += ' <span class="badge bg-secondary ms-2">Top ' + div.topN + ' from each group</span>';
+    html += ' <span class="badge bg-secondary ms-auto">Top ' + div.topN + ' per group</span>';
     html += '</div>';
     html += '<div class="card-body p-2">';
-    html += '<p class="text-muted small mb-2">Source groups: ' + div.pools.map(escHtml).join(' &nbsp;·&nbsp; ') + '</p>';
+
+    // ── SL STANDINGS (shown when matches exist) ──────────────────
+    if (hasSlMatches) {
+      html += '<h6 class="fw-bold text-primary mb-2 mt-1">📊 Super League Points Table</h6>';
+      html += '<div class="table-responsive mb-3">';
+      html += '<table class="table table-sm table-bordered text-center align-middle mb-0">';
+      html += '<thead class="table-dark"><tr>';
+      html += '<th>#</th><th class="text-start">Team</th><th>P</th><th>W</th><th>L</th><th>T</th><th>Pts</th><th>NRR (DDCA)</th><th>NRR (ICC)</th>';
+      html += '</tr></thead><tbody>';
+      div.slStandings.forEach(function(team, idx) {
+        var rowClass = (idx < div.topN) ? 'qualifier-row' : '';
+        html += '<tr class="' + rowClass + '">';
+        html += '<td>' + (idx + 1) + '</td>';
+        html += '<td class="text-start fw-bold">' + escHtml(team.name) + '</td>';
+        html += '<td>' + team.p + '</td>';
+        html += '<td>' + team.w + '</td>';
+        html += '<td>' + team.l + '</td>';
+        html += '<td>' + team.t + '</td>';
+        html += '<td><strong>' + team.pts + '</strong></td>';
+        html += '<td>' + team.nrrDDCA + '</td>';
+        html += '<td class="text-muted">' + team.nrrICC + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '<div class="small text-muted mb-3">';
+      html += '<span style="display:inline-block;width:10px;height:10px;background:#198754;border-radius:2px;margin-right:4px;"></span>';
+      html += 'Top ' + div.topN + ' advance · Sorted: Wins &rarr; Points &rarr; NRR (DDCA)';
+      html += '</div>';
+    } else {
+      html += '<div class="alert alert-info py-2 small mb-3">No Super League matches recorded yet for ' + escHtml(div.division) + '. Use Admin → Super League entry to add results.</div>';
+    }
+
+    // ── GROUP STAGE QUALIFIERS (collapsible) ─────────────────────
+    var collapseId = 'qualCollapse_' + div.division.replace(/\s+/g, '');
+    html += '<details' + (hasSlMatches ? '' : ' open') + '>';
+    html += '<summary class="fw-semibold small text-muted mb-2" style="cursor:pointer;">👥 Group Stage Qualifiers · ' + escHtml(div.slPoolName) + '</summary>';
+    html += '<p class="text-muted small mb-1">Source groups: ' + div.pools.map(escHtml).join(' &nbsp;·&nbsp; ') + '</p>';
+
     if (div.qualifiedTeams.length === 0) {
-      html += '<p class="text-muted">No teams qualified yet — results may not be entered.</p>';
+      html += '<p class="text-muted small">No teams qualified yet — group stage results may not be entered.</p>';
     } else {
       html += '<div class="table-responsive">';
       html += '<table class="table table-sm table-bordered text-center align-middle mb-0">';
-      html += '<thead class="table-dark"><tr>';
+      html += '<thead class="table-secondary"><tr>';
       html += '<th>#</th><th class="text-start">Team</th><th>From Group</th>';
       html += '<th>P</th><th>W</th><th>L</th><th>Pts</th><th>NRR (DDCA)</th>';
       html += '</tr></thead><tbody>';
       div.qualifiedTeams.forEach(function(team, idx) {
-        var rowClass = (idx < div.topN) ? 'qualifier-row' : '';
-        html += '<tr class="' + rowClass + '">';
+        html += '<tr>';
         html += '<td>' + (idx + 1) + '</td>';
         html += '<td class="text-start fw-bold">' + escHtml(team.name) + '</td>';
         html += '<td><small class="text-muted">' + escHtml(team.sourcePool) +
@@ -2586,13 +2625,12 @@ function renderSuperLeague(divisions) {
         html += '</tr>';
       });
       html += '</tbody></table></div>';
-      html += '<div class="small text-muted mt-2">';
-      html += '<span style="display:inline-block;width:10px;height:10px;background:#198754;border-radius:2px;"></span>';
-      html += ' Top ' + div.topN + ' advance · Sorted: Wins &rarr; Points &rarr; NRR (DDCA)';
-      html += '</div>';
     }
+    html += '</details>';
+
     html += '</div></div>';
   });
+
   document.getElementById('slContent').innerHTML = html;
 }
 
