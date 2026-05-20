@@ -597,6 +597,32 @@ function getSuperLeague(topN) {
   return result;
 }
 
+/**
+ * getSuperLeagueQualified(divisionName, topN)
+ * Returns the team names and sheet/pool name for a specific super league division.
+ * Used to populate the admin team-entry dropdowns.
+ *
+ * @param {string} divisionName  e.g. "I-Division"
+ * @param {number} topN          Teams per group (default 2)
+ * @returns {{ teams: string[], poolName: string }}
+ */
+function getSuperLeagueQualified(divisionName, topN) {
+  var all = getSuperLeague(topN || 2);
+  var div = null;
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].division === divisionName) { div = all[i]; break; }
+  }
+  if (!div) return { teams: [], poolName: '' };
+
+  // Sheet name: "I-Division" → "I-Div Super League"
+  var poolName = divisionName.replace('Division', 'Div') + ' Super League';
+
+  return {
+    teams:    div.qualifiedTeams.map(function(t) { return t.name; }),
+    poolName: poolName
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ONE-TIME SETUP
 // ═══════════════════════════════════════════════════════════════════════════

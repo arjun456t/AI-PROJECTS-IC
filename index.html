@@ -934,6 +934,14 @@
             <div id="loginError" class="text-danger small mt-2" style="display:none;">Incorrect PIN</div>
           </div>
         </div>
+        <!-- Mode toggle (shown after login) -->
+        <div id="adminModeToggle" style="display:none;" class="mb-3">
+          <div class="btn-group w-100">
+            <button type="button" class="btn btn-outline-dark active" id="modeGroupBtn" onclick="setAdminMode('group')">📊 Group Stage</button>
+            <button type="button" class="btn btn-outline-primary" id="modeSlBtn" onclick="setAdminMode('sl')">🏆 Super League</button>
+          </div>
+        </div>
+
         <form id="scoreForm" style="display:none;">
           <input type="hidden" name="pin" id="hiddenPin">
 
@@ -1045,6 +1053,143 @@
             <button type="submit" class="btn btn-dark">Submit Match Result</button>
           </div>
         </form>
+
+        <!-- ===== SUPER LEAGUE MATCH ENTRY ===== -->
+        <form id="slScoreForm" style="display:none;">
+          <input type="hidden" name="pin" id="slHiddenPin">
+          <input type="hidden" name="pool" id="slPool">
+
+          <div class="row mb-3 g-2 bg-light p-2 rounded border">
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Match Date*</label>
+              <input type="date" class="form-control" name="date" id="slMatchDate" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Total Match Overs*</label>
+              <input type="number" class="form-control" name="matchOvers" value="50" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Ground / Venue*</label>
+              <select class="form-select" name="ground" id="slGroundSelect" required>
+                <option value="">Loading...</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="card mb-3 border-warning">
+            <div class="card-body py-2">
+              <div class="row g-2 align-items-end">
+                <div class="col-md-5">
+                  <label class="form-label small fw-bold">Super League Division*</label>
+                  <select class="form-select" id="slDivisionSelect">
+                    <option value="">Select Division…</option>
+                    <option value="I-Division">I-Division Super League</option>
+                    <option value="II-Division">II-Division Super League</option>
+                    <option value="III-Division">III-Division Super League</option>
+                    <option value="IV-Division">IV-Division Super League</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label small fw-bold">Top N per group</label>
+                  <input type="number" class="form-control" id="slEntryTopN" value="2" min="1" max="6">
+                </div>
+                <div class="col-md-4">
+                  <button type="button" class="btn btn-warning w-100" onclick="slLoadTeams()">🔄 Load Teams</button>
+                </div>
+              </div>
+              <div id="slLoadStatus" class="small text-muted mt-1"></div>
+            </div>
+          </div>
+
+          <div class="card mb-3">
+            <div class="card-body py-3">
+              <div class="row align-items-center">
+                <div class="col-5">
+                  <select class="form-select" name="teamA" id="slTeamA" required disabled>
+                    <option value="">Load teams first</option>
+                  </select>
+                </div>
+                <div class="col-2 text-center fw-bold">VS</div>
+                <div class="col-5">
+                  <select class="form-select" name="teamB" id="slTeamB" required disabled>
+                    <option value="">Load teams first</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mb-3 border-info">
+            <div class="card-body py-2">
+              <div class="row align-items-center">
+                <div class="col-md-2 fw-bold text-info-emphasis">Toss:*</div>
+                <div class="col-md-5">
+                  <select class="form-select form-select-sm" name="tossWinner" id="slTossWinner" required disabled>
+                    <option value="">Winner?</option>
+                  </select>
+                </div>
+                <div class="col-md-5">
+                  <select class="form-select form-select-sm" name="tossChoice" id="slTossChoice" required disabled>
+                    <option value="">Choice?</option>
+                    <option value="Bat">Bat</option>
+                    <option value="Bowl">Bowl</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="card border-primary h-100">
+                <div class="card-header bg-primary text-white py-1">Batting 1st</div>
+                <div class="card-body">
+                  <input type="text" class="form-control mb-2 fw-bold" name="batFirst" id="slBatFirst" readonly placeholder="Waiting for Toss...">
+                  <div class="input-group input-group-sm mb-2">
+                    <span class="input-group-text">Runs</span>
+                    <input type="number" class="form-control" name="score1" required>
+                  </div>
+                  <div class="row g-2">
+                    <div class="col-6 input-group input-group-sm">
+                      <span class="input-group-text">Ov</span>
+                      <input type="number" class="form-control" name="overs1" step="0.1" required>
+                    </div>
+                    <div class="col-6 input-group input-group-sm">
+                      <span class="input-group-text">Wk</span>
+                      <input type="number" class="form-control" name="wkts1" max="10" required>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card border-success h-100">
+                <div class="card-header bg-success text-white py-1">Batting 2nd</div>
+                <div class="card-body">
+                  <input type="text" class="form-control mb-2 fw-bold" name="batSecond" id="slBatSecond" readonly placeholder="Waiting for Toss...">
+                  <div class="input-group input-group-sm mb-2">
+                    <span class="input-group-text">Runs</span>
+                    <input type="number" class="form-control" name="score2" required>
+                  </div>
+                  <div class="row g-2">
+                    <div class="col-6 input-group input-group-sm">
+                      <span class="input-group-text">Ov</span>
+                      <input type="number" class="form-control" name="overs2" step="0.1" required>
+                    </div>
+                    <div class="col-6 input-group input-group-sm">
+                      <span class="input-group-text">Wk</span>
+                      <input type="number" class="form-control" name="wkts2" max="10" required>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 d-grid">
+            <button type="submit" class="btn btn-primary">🏆 Submit Super League Result</button>
+          </div>
+        </form>
+
       </div>
     <? } ?>
   </div>
@@ -1125,14 +1270,14 @@
 
   function loadGrounds() {
     google.script.run.withSuccessHandler(grounds => {
-      const sel = document.getElementById('groundSelect');
-      if (!sel) return;
-      if (!grounds || grounds.length === 0) {
-        sel.innerHTML = '<option value="">No grounds found</option>';
-        return;
-      }
-      sel.innerHTML = '<option value="">Select Ground...</option>' +
-        grounds.map(g => `<option value="${g}">${g}</option>`).join('');
+      const opts = (!grounds || grounds.length === 0)
+        ? '<option value="">No grounds found</option>'
+        : '<option value="">Select Ground...</option>' +
+          grounds.map(g => `<option value="${g}">${escHtml(g)}</option>`).join('');
+      ['groundSelect', 'slGroundSelect'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (sel) sel.innerHTML = opts;
+      });
     }).getGrounds();
   }
 
@@ -1444,10 +1589,12 @@
       if (isValid) {
         _adminPin = pin;
         document.getElementById('syncLoginSection').style.display = 'none';
-        document.getElementById('syncContent').style.display     = 'block';
-        document.getElementById('adminLogin').style.display = 'none';
-        document.getElementById('scoreForm').style.display  = 'block';
-        document.getElementById('hiddenPin').value          = pin;
+        document.getElementById('syncContent').style.display      = 'block';
+        document.getElementById('adminLogin').style.display       = 'none';
+        document.getElementById('adminModeToggle').style.display  = 'block';
+        document.getElementById('scoreForm').style.display        = 'block';
+        document.getElementById('hiddenPin').value                = pin;
+        document.getElementById('slHiddenPin').value              = pin;
       } else {
         document.getElementById('syncLoginError').style.display = 'block';
       }
@@ -2059,6 +2206,122 @@
   }
 
   // ─────────────────────────────────────────────────────────────
+  //  ADMIN — MODE TOGGLE (Group Stage / Super League)
+  // ─────────────────────────────────────────────────────────────
+  function setAdminMode(mode) {
+    const isGroup = (mode === 'group');
+    document.getElementById('scoreForm').style.display   = isGroup ? 'block' : 'none';
+    document.getElementById('slScoreForm').style.display = isGroup ? 'none'  : 'block';
+    document.getElementById('modeGroupBtn').classList.toggle('active', isGroup);
+    document.getElementById('modeSlBtn').classList.toggle('active', !isGroup);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SUPER LEAGUE ENTRY — TEAM LOADER + TOSS + SUBMIT
+  // ─────────────────────────────────────────────────────────────
+  function slLoadTeams() {
+    const division = document.getElementById('slDivisionSelect').value;
+    const topN     = parseInt(document.getElementById('slEntryTopN').value) || 2;
+    const status   = document.getElementById('slLoadStatus');
+    if (!division) { status.textContent = 'Please select a division first.'; return; }
+
+    status.textContent = 'Loading qualified teams…';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || res.teams.length === 0) {
+          status.textContent = 'No qualified teams found. Ensure group stage results are entered.';
+          return;
+        }
+        document.getElementById('slPool').value = res.poolName;
+        const teamOpts = '<option value="">Select team…</option>' +
+          res.teams.map(t => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');
+        const slTeamA = document.getElementById('slTeamA');
+        const slTeamB = document.getElementById('slTeamB');
+        slTeamA.innerHTML = teamOpts;
+        slTeamB.innerHTML = teamOpts;
+        slTeamA.disabled = false;
+        slTeamB.disabled = false;
+        document.getElementById('slTossWinner').disabled = true;
+        document.getElementById('slTossChoice').disabled = true;
+        document.getElementById('slBatFirst').value  = '';
+        document.getElementById('slBatSecond').value = '';
+        status.textContent = '✅ ' + res.teams.length + ' teams loaded for ' + res.poolName;
+        initSlToss();
+      })
+      .withFailureHandler(function(err) {
+        status.textContent = 'Error: ' + err.message;
+      })
+      .getSuperLeagueQualified(division, topN);
+  }
+
+  function initSlToss() {
+    const slTeamA      = document.getElementById('slTeamA');
+    const slTeamB      = document.getElementById('slTeamB');
+    const slTossWinner = document.getElementById('slTossWinner');
+    const slTossChoice = document.getElementById('slTossChoice');
+
+    const updateToss = () => {
+      const vA = slTeamA.value, vB = slTeamB.value;
+      document.getElementById('slBatFirst').value  = '';
+      document.getElementById('slBatSecond').value = '';
+      if (vA && vB && vA === vB) { alert('Same team selected twice.'); slTeamB.value = ''; return; }
+      if (vA && vB) {
+        slTossWinner.disabled = false;
+        slTossWinner.innerHTML = `<option value="">Winner?</option><option value="${vA}">${escHtml(vA)}</option><option value="${vB}">${escHtml(vB)}</option>`;
+        slTossChoice.disabled = false;
+      } else {
+        slTossWinner.disabled = true; slTossChoice.disabled = true;
+      }
+    };
+
+    const calcOrder = () => {
+      const winner = slTossWinner.value, choice = slTossChoice.value;
+      const vA = slTeamA.value, vB = slTeamB.value;
+      if (!winner || !choice || !vA || !vB) return;
+      const loser = winner === vA ? vB : vA;
+      document.getElementById('slBatFirst').value  = choice === 'Bat' ? winner : loser;
+      document.getElementById('slBatSecond').value = choice === 'Bat' ? loser  : winner;
+    };
+
+    // Re-register listeners by cloning to avoid duplicates
+    [slTeamA, slTeamB].forEach(el => {
+      const clone = el.cloneNode(true);
+      el.parentNode.replaceChild(clone, el);
+      clone.addEventListener('change', updateToss);
+    });
+    [slTossWinner, slTossChoice].forEach(el => {
+      const clone = el.cloneNode(true);
+      el.parentNode.replaceChild(clone, el);
+      clone.addEventListener('change', calcOrder);
+    });
+  }
+
+  document.getElementById('slScoreForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    if (!document.getElementById('slPool').value) { alert('Load teams first.'); return; }
+    if (!document.getElementById('slBatFirst').value) { alert('Complete Toss Details.'); return; }
+    const btn = this.querySelector('button[type="submit"]');
+    const orig = btn.innerText;
+    btn.disabled = true; btn.innerText = 'Saving...';
+    google.script.run
+      .withSuccessHandler(msg => {
+        alert(msg); this.reset();
+        document.getElementById('slPool').value = '';
+        document.getElementById('slLoadStatus').textContent = '';
+        document.getElementById('slTeamA').disabled = true;
+        document.getElementById('slTeamB').disabled = true;
+        document.getElementById('slTossWinner').disabled = true;
+        document.getElementById('slTossChoice').disabled = true;
+        btn.disabled = false; btn.innerText = orig;
+      })
+      .withFailureHandler(err => {
+        alert('Error: ' + err.message);
+        btn.disabled = false; btn.innerText = orig;
+      })
+      .submitScore(this);
+  });
+
+  // ─────────────────────────────────────────────────────────────
   //  ADMIN TAB — LOGIN
   // ─────────────────────────────────────────────────────────────
   function attemptLogin() {
@@ -2069,9 +2332,11 @@
       btn.disabled = false; btn.innerText = 'Unlock';
       if (isValid) {
         _adminPin = pin;
-        document.getElementById('adminLogin').style.display = 'none';
-        document.getElementById('scoreForm').style.display  = 'block';
-        document.getElementById('hiddenPin').value          = pin;
+        document.getElementById('adminLogin').style.display      = 'none';
+        document.getElementById('adminModeToggle').style.display = 'block';
+        document.getElementById('scoreForm').style.display       = 'block';
+        document.getElementById('hiddenPin').value               = pin;
+        document.getElementById('slHiddenPin').value             = pin;
         document.getElementById('syncLoginSection').style.display = 'none';
         document.getElementById('syncContent').style.display      = 'block';
       } else {
