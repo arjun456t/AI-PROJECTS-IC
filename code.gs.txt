@@ -613,7 +613,9 @@ function getSuperLeagueData(topN) {
   qualData.forEach(function(div) {
     var slPoolName  = div.division.replace('Division', 'Div') + ' Super League';
     var slStandings = [];
+    var slResults   = [];
     try { slStandings = getStandings(slPoolName); } catch (e) {}
+    try { slResults   = getResults(slPoolName);   } catch (e) {}
 
     result.push({
       division:       div.division,
@@ -621,7 +623,8 @@ function getSuperLeagueData(topN) {
       topN:           div.topN,
       qualifiedTeams: div.qualifiedTeams,
       slPoolName:     slPoolName,
-      slStandings:    slStandings
+      slStandings:    slStandings,
+      slResults:      slResults
     });
   });
 

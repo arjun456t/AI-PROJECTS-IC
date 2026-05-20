@@ -2596,6 +2596,39 @@ function renderSuperLeague(divisions) {
       html += '<div class="alert alert-info py-2 small mb-3">No Super League matches recorded yet for ' + escHtml(div.division) + '. Use Admin → Super League entry to add results.</div>';
     }
 
+    // ── SL RESULTS (collapsible) ─────────────────────────────────
+    html += '<details' + (hasSlMatches ? '' : ' style="display:none"') + ' class="mb-3">';
+    html += '<summary class="fw-semibold small text-muted mb-2" style="cursor:pointer;">📋 Super League Results (' + (div.slResults ? div.slResults.length : 0) + ')</summary>';
+    if (!div.slResults || div.slResults.length === 0) {
+      html += '<p class="text-muted small">No results yet.</p>';
+    } else {
+      html += '<div class="table-responsive"><table class="table table-sm table-bordered text-center align-middle mb-0">';
+      html += '<thead class="table-dark"><tr><th>Date</th><th>Bat 1st</th><th class="px-1">vs</th><th>Bat 2nd</th><th>Result</th><th class="d-none d-md-table-cell">Ground / Toss</th></tr></thead><tbody>';
+      div.slResults.forEach(function(r) {
+        var w1 = r.bat1 === r.winner, w2 = r.bat2 === r.winner;
+        var s1 = r.score1 + '/' + r.wkts1 + ' (' + parseFloat(r.overs1).toFixed(1) + ')';
+        var s2 = r.score2 + '/' + r.wkts2 + ' (' + parseFloat(r.overs2).toFixed(1) + ')';
+        var runDiff = r.score1 - r.score2;
+        var wktDiff = 10 - r.wkts2;
+        var hasBonus = false, marginText = 'No Result';
+        if (r.winner === 'Tie') { marginText = 'Match Tied'; }
+        else if (w1) { marginText = escHtml(r.bat1) + ' won by ' + runDiff + ' runs'; if ((runDiff / r.score1) > 0.20) hasBonus = true; }
+        else if (w2) { marginText = escHtml(r.bat2) + ' won by ' + wktDiff + ' wkts'; if (r.overs2 <= (r.tov * 0.8)) hasBonus = true; }
+        var tossInfo = r.tossWinner ? escHtml(r.tossWinner) + ' (' + escHtml(r.tossChoice) + ')' : '—';
+        var bonusBadge = hasBonus ? ' <span class="bonus-chip">✨ Bonus</span>' : '';
+        html += '<tr>';
+        html += '<td class="small"><div class="fw-bold text-secondary">' + escHtml(r.date) + '</div><span class="badge bg-light text-dark border">' + r.tov + ' Ov</span></td>';
+        html += '<td class="text-end" style="width:25%"><div class="fw-bold ' + (w1 ? 'text-dark' : 'text-muted') + '">' + (w1 ? '🏆 ' : '') + escHtml(r.bat1) + '</div><div class="small text-secondary" style="font-family:monospace">' + s1 + '</div></td>';
+        html += '<td class="text-muted small fw-bold px-1">vs</td>';
+        html += '<td class="text-start" style="width:25%"><div class="fw-bold ' + (w2 ? 'text-dark' : 'text-muted') + '">' + (w2 ? '🏆 ' : '') + escHtml(r.bat2) + '</div><div class="small text-secondary" style="font-family:monospace">' + s2 + '</div></td>';
+        html += '<td class="align-middle"><div class="fw-bold ' + (hasBonus ? 'text-success' : 'text-primary') + '" style="font-size:0.8rem">' + marginText + '</div>' + bonusBadge + '</td>';
+        html += '<td class="d-none d-md-table-cell small text-muted text-start"><div class="text-truncate" style="max-width:180px">📍 ' + escHtml(r.ground) + '</div><div class="mt-1 text-truncate" style="max-width:180px">🪙 ' + tossInfo + '</div></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    html += '</details>';
+
     // ── GROUP STAGE QUALIFIERS (collapsible) ─────────────────────
     var collapseId = 'qualCollapse_' + div.division.replace(/\s+/g, '');
     html += '<details' + (hasSlMatches ? '' : ' open') + '>';
