@@ -520,6 +520,84 @@ function submitSyncedMatch(data) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// SUPER LEAGUE — Top N qualifiers from each group, grouped by division
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * getSuperLeague(topN)
+ * Groups all pools by division, picks top `topN` teams from each pool,
+ * and returns per-division qualified team lists.
+ *
+ * @param {number} topN  Teams to pick from each group (default 2).
+ * @returns {Array}  [{division, pools, topN, qualifiedTeams:[...]}, ...]
+ */
+function getSuperLeague(topN) {
+  topN = parseInt(topN) || 2;
+  var pools = getPools();
+
+  // Group pools by division — check longer prefixes first to avoid mis-matching
+  var divisionGroups = {};
+  var divisionOrder  = [];
+
+  pools.forEach(function(pool) {
+    var p = pool.toUpperCase();
+    var divKey;
+    if (p.indexOf('IV-DIV') === 0)  divKey = 'IV-Division';
+    else if (p.indexOf('III-DIV') === 0) divKey = 'III-Division';
+    else if (p.indexOf('II-DIV') === 0)  divKey = 'II-Division';
+    else if (p.indexOf('I-DIV') === 0)   divKey = 'I-Division';
+    else                                  divKey = pool;   // standalone
+
+    if (!divisionGroups[divKey]) {
+      divisionGroups[divKey] = [];
+      divisionOrder.push(divKey);
+    }
+    divisionGroups[divKey].push(pool);
+  });
+
+  var result = [];
+
+  divisionOrder.forEach(function(div) {
+    var groupPools    = divisionGroups[div];
+    var qualifiedTeams = [];
+
+    groupPools.forEach(function(pool) {
+      var standings = getStandings(pool);
+      standings.slice(0, topN).forEach(function(team, idx) {
+        qualifiedTeams.push({
+          name:       team.name,
+          sourcePool: pool,
+          groupRank:  idx + 1,
+          p:          team.p,
+          w:          team.w,
+          l:          team.l,
+          t:          team.t,
+          pts:        team.pts,
+          nrrICC:     team.nrrICC,
+          nrrDDCA:    team.nrrDDCA
+        });
+      });
+    });
+
+    // Sort combined list: wins → pts → nrrDDCA
+    qualifiedTeams.sort(function(a, b) {
+      if (b.w !== a.w) return b.w - a.w;
+      if (b.pts !== a.pts) return b.pts - a.pts;
+      return b.nrrDDCA - a.nrrDDCA;
+    });
+
+    result.push({
+      division:      div,
+      pools:         groupPools,
+      topN:          topN,
+      qualifiedTeams: qualifiedTeams
+    });
+  });
+
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ONE-TIME SETUP
 // ═══════════════════════════════════════════════════════════════════════════
 function setupSpreadsheet() {

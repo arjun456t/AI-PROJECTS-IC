@@ -654,6 +654,7 @@
     <li class="nav-item"><button class="nav-link active" id="view-tab" data-bs-toggle="tab" data-bs-target="#view">📊 Points Table</button></li>
     <li class="nav-item"><button class="nav-link" id="matrix-tab" data-bs-toggle="tab" data-bs-target="#matrix">🕸️ Matrix View</button></li>
     <li class="nav-item"><button class="nav-link" id="results-tab" data-bs-toggle="tab" data-bs-target="#results">📋 Results</button></li>
+    <li class="nav-item"><button class="nav-link" id="superLeague-tab" data-bs-toggle="tab" data-bs-target="#superLeague">🏆 Super League</button></li>
 
     <? if (isAdmin) { ?>
       <li class="nav-item"><button class="nav-link" id="sync-tab" data-bs-toggle="tab" data-bs-target="#sync">🔄 Sync Queue</button></li>
@@ -860,6 +861,27 @@
         </table>
       </div>
       <div id="resultsCount" class="small text-muted mt-1"></div>
+    </div>
+
+    <!-- ===================== SUPER LEAGUE ===================== -->
+    <div class="tab-pane fade" id="superLeague">
+      <div class="row g-2 align-items-center mb-3">
+        <div class="col-auto">
+          <label class="col-form-label fw-bold">Top teams per group:</label>
+        </div>
+        <div class="col-auto">
+          <input type="number" class="form-control form-control-sm" id="slTopN" value="2" min="1" max="6" style="width:70px;">
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-primary btn-sm" onclick="loadSuperLeague()">🏆 Load Super League</button>
+        </div>
+        <div class="col-auto" id="slLoader" style="display:none;">
+          <div class="spinner-border spinner-border-sm text-primary"></div>
+        </div>
+      </div>
+      <div id="slContent">
+        <p class="text-muted small">Select how many top teams to qualify from each group, then click <strong>Load Super League</strong>.</p>
+      </div>
     </div>
 
     <? if (isAdmin) { ?>
@@ -2241,6 +2263,72 @@ function loadResultsWithCache(pool) {
         '<tr><td colspan="8" class="text-danger">Error: ' + escHtml(err.message) + '</td></tr>';
     })
     .getResults(pool);
+}
+
+// ─── SUPER LEAGUE ─────────────────────────────────────────────────────────
+function loadSuperLeague() {
+  var topN = parseInt(document.getElementById('slTopN').value) || 2;
+  document.getElementById('slLoader').style.display = 'block';
+  document.getElementById('slContent').innerHTML = '<p class="text-muted">Loading…</p>';
+  google.script.run
+    .withSuccessHandler(function(data) {
+      document.getElementById('slLoader').style.display = 'none';
+      renderSuperLeague(data);
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('slLoader').style.display = 'none';
+      document.getElementById('slContent').innerHTML =
+        '<div class="alert alert-danger">Error: ' + escHtml(err.message) + '</div>';
+    })
+    .getSuperLeague(topN);
+}
+
+function renderSuperLeague(divisions) {
+  if (!divisions || divisions.length === 0) {
+    document.getElementById('slContent').innerHTML = '<p class="text-muted">No data available.</p>';
+    return;
+  }
+  var html = '';
+  divisions.forEach(function(div) {
+    html += '<div class="card mb-4 shadow-sm">';
+    html += '<div class="card-header fw-bold" style="background:linear-gradient(135deg,#1a1a2e,#0f3460);color:white;">';
+    html += '🏆 ' + escHtml(div.division) + ' Super League';
+    html += ' <span class="badge bg-secondary ms-2">Top ' + div.topN + ' from each group</span>';
+    html += '</div>';
+    html += '<div class="card-body p-2">';
+    html += '<p class="text-muted small mb-2">Source groups: ' + div.pools.map(escHtml).join(' &nbsp;·&nbsp; ') + '</p>';
+    if (div.qualifiedTeams.length === 0) {
+      html += '<p class="text-muted">No teams qualified yet — results may not be entered.</p>';
+    } else {
+      html += '<div class="table-responsive">';
+      html += '<table class="table table-sm table-bordered text-center align-middle mb-0">';
+      html += '<thead class="table-dark"><tr>';
+      html += '<th>#</th><th class="text-start">Team</th><th>From Group</th>';
+      html += '<th>P</th><th>W</th><th>L</th><th>Pts</th><th>NRR (DDCA)</th>';
+      html += '</tr></thead><tbody>';
+      div.qualifiedTeams.forEach(function(team, idx) {
+        var rowClass = (idx < div.topN) ? 'qualifier-row' : '';
+        html += '<tr class="' + rowClass + '">';
+        html += '<td>' + (idx + 1) + '</td>';
+        html += '<td class="text-start fw-bold">' + escHtml(team.name) + '</td>';
+        html += '<td><small class="text-muted">' + escHtml(team.sourcePool) +
+                ' <span class="badge bg-secondary">#' + team.groupRank + '</span></small></td>';
+        html += '<td>' + team.p + '</td>';
+        html += '<td>' + team.w + '</td>';
+        html += '<td>' + team.l + '</td>';
+        html += '<td><strong>' + team.pts + '</strong></td>';
+        html += '<td>' + team.nrrDDCA + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '<div class="small text-muted mt-2">';
+      html += '<span style="display:inline-block;width:10px;height:10px;background:#198754;border-radius:2px;"></span>';
+      html += ' Top ' + div.topN + ' advance · Sorted: Wins &rarr; Points &rarr; NRR (DDCA)';
+      html += '</div>';
+    }
+    html += '</div></div>';
+  });
+  document.getElementById('slContent').innerHTML = html;
 }
 
 // ─── 4. ANIMATED NUMBER COUNT-UP ──────────────────────────────────────────
