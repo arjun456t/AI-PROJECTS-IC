@@ -2602,8 +2602,7 @@ function renderSuperLeague(divisions) {
     if (!div.slResults || div.slResults.length === 0) {
       html += '<p class="text-muted small">No results yet.</p>';
     } else {
-      html += '<div class="table-responsive"><table class="table table-sm table-bordered text-center align-middle mb-0">';
-      html += '<thead class="table-dark"><tr><th>Date</th><th>Bat 1st</th><th class="px-1">vs</th><th>Bat 2nd</th><th>Result</th><th class="d-none d-md-table-cell">Ground / Toss</th></tr></thead><tbody>';
+      // shared calculation helper
       div.slResults.forEach(function(r) {
         var w1 = r.bat1 === r.winner, w2 = r.bat2 === r.winner;
         var s1 = r.score1 + '/' + r.wkts1 + ' (' + parseFloat(r.overs1).toFixed(1) + ')';
@@ -2613,16 +2612,38 @@ function renderSuperLeague(divisions) {
         var hasBonus = false, marginText = 'No Result';
         if (r.winner === 'Tie') { marginText = 'Match Tied'; }
         else if (w1) { marginText = escHtml(r.bat1) + ' won by ' + runDiff + ' runs'; if ((runDiff / r.score1) > 0.20) hasBonus = true; }
-        else if (w2) { marginText = escHtml(r.bat2) + ' won by ' + wktDiff + ' wkts'; if (r.overs2 <= (r.tov * 0.8)) hasBonus = true; }
+        else if (w2) { marginText = escHtml(r.bat2) + ' won by ' + wktDiff + ' wickets'; if (r.overs2 <= (r.tov * 0.8)) hasBonus = true; }
         var tossInfo = r.tossWinner ? escHtml(r.tossWinner) + ' (' + escHtml(r.tossChoice) + ')' : '—';
-        var bonusBadge = hasBonus ? ' <span class="bonus-chip">✨ Bonus</span>' : '';
+        var bonusBadge = hasBonus ? '<span class="bonus-chip">✨ Bonus</span>' : '';
+        var tbLine = r.tieBreaker ? ' <span class="text-warning">(' + escHtml(r.tieBreaker) + ')</span>' : '';
+
+        // ── mobile card ──────────────────────────────────────────
+        html += '<div class="match-card d-sm-none position-relative">';
+        html += '<div class="mc-top-right">' + r.tov + ' Ov</div>';
+        html += '<div class="match-meta pe-5"><span>📅 ' + escHtml(r.date) + '</span>';
+        if (r.ground) html += '<span class="mc-ground">· ' + escHtml(r.ground) + '</span>';
+        html += '</div>';
+        html += '<div class="match-innings"><span class="mc-team' + (w1 ? ' fw-bold' : '') + '">' + (w1 ? '🏆 ' : '') + escHtml(r.bat1) + '</span><span class="mc-score">' + s1 + '</span></div>';
+        html += '<div class="match-innings"><span class="mc-team' + (w2 ? ' fw-bold' : '') + '">' + (w2 ? '🏆 ' : '') + escHtml(r.bat2) + '</span><span class="mc-score">' + s2 + '</span></div>';
+        html += '<div class="match-card-result"><span>' + marginText + tbLine + '</span>' + bonusBadge + '</div>';
+        html += '</div>';
+
+        r._w1 = w1; r._w2 = w2; r._s1 = s1; r._s2 = s2;
+        r._marginText = marginText; r._hasBonus = hasBonus;
+        r._bonusBadge = bonusBadge; r._tbLine = tbLine; r._tossInfo = tossInfo;
+      });
+
+      // ── desktop table ────────────────────────────────────────
+      html += '<div class="table-responsive d-none d-sm-block"><table class="table table-sm table-bordered text-center align-middle mb-0">';
+      html += '<thead class="table-dark"><tr><th>Date</th><th>Bat 1st</th><th class="px-1">vs</th><th>Bat 2nd</th><th>Result</th><th class="d-none d-md-table-cell">Ground / Toss</th></tr></thead><tbody>';
+      div.slResults.forEach(function(r) {
         html += '<tr>';
         html += '<td class="small"><div class="fw-bold text-secondary">' + escHtml(r.date) + '</div><span class="badge bg-light text-dark border">' + r.tov + ' Ov</span></td>';
-        html += '<td class="text-end" style="width:25%"><div class="fw-bold ' + (w1 ? 'text-dark' : 'text-muted') + '">' + (w1 ? '🏆 ' : '') + escHtml(r.bat1) + '</div><div class="small text-secondary" style="font-family:monospace">' + s1 + '</div></td>';
+        html += '<td class="text-end" style="width:25%"><div class="fw-bold ' + (r._w1 ? 'text-dark' : 'text-muted') + '">' + (r._w1 ? '🏆 ' : '') + escHtml(r.bat1) + '</div><div class="small text-secondary" style="font-family:monospace">' + r._s1 + '</div></td>';
         html += '<td class="text-muted small fw-bold px-1">vs</td>';
-        html += '<td class="text-start" style="width:25%"><div class="fw-bold ' + (w2 ? 'text-dark' : 'text-muted') + '">' + (w2 ? '🏆 ' : '') + escHtml(r.bat2) + '</div><div class="small text-secondary" style="font-family:monospace">' + s2 + '</div></td>';
-        html += '<td class="align-middle"><div class="fw-bold ' + (hasBonus ? 'text-success' : 'text-primary') + '" style="font-size:0.8rem">' + marginText + '</div>' + bonusBadge + '</td>';
-        html += '<td class="d-none d-md-table-cell small text-muted text-start"><div class="text-truncate" style="max-width:180px">📍 ' + escHtml(r.ground) + '</div><div class="mt-1 text-truncate" style="max-width:180px">🪙 ' + tossInfo + '</div></td>';
+        html += '<td class="text-start" style="width:25%"><div class="fw-bold ' + (r._w2 ? 'text-dark' : 'text-muted') + '">' + (r._w2 ? '🏆 ' : '') + escHtml(r.bat2) + '</div><div class="small text-secondary" style="font-family:monospace">' + r._s2 + '</div></td>';
+        html += '<td class="align-middle"><div class="fw-bold ' + (r._hasBonus ? 'text-success' : 'text-primary') + '" style="font-size:0.8rem">' + r._marginText + '</div>' + r._bonusBadge + '</td>';
+        html += '<td class="d-none d-md-table-cell small text-muted text-start"><div class="text-truncate" style="max-width:180px">📍 ' + escHtml(r.ground) + '</div><div class="mt-1 text-truncate" style="max-width:180px">🪙 ' + r._tossInfo + '</div></td>';
         html += '</tr>';
       });
       html += '</tbody></table></div>';
