@@ -2382,7 +2382,7 @@ function cacheGet(key) {
 }
 
 // ─── 3. LAZY LOADING + SKELETON + ANIMATED NUMBERS ────────────────────────
-var _tabLoaded = { view: false, matrix: false, results: false };
+var _tabLoaded = { view: false, matrix: false, results: false, superLeague: false };
 
 // Override pool change listeners to use cache and skeletons
 document.addEventListener('DOMContentLoaded', function() {
@@ -2432,6 +2432,16 @@ document.addEventListener('DOMContentLoaded', function() {
       if (_tabLoaded.results) return;
       var pool = document.getElementById('resultsPoolSelect').value;
       if (pool && _resultsPool !== pool) loadResultsWithCache(pool);
+    });
+  }
+
+  // Lazy tab: super league auto-loads when tab is clicked
+  var slTab = document.getElementById('superLeague-tab');
+  if (slTab) {
+    slTab.addEventListener('shown.bs.tab', function() {
+      if (_tabLoaded.superLeague) return;
+      loadSuperLeague();
+      _tabLoaded.superLeague = true;
     });
   }
 
