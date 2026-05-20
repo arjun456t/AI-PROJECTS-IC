@@ -1,0 +1,1007 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// DDCA League Manager 2025-26
+// Google Apps Script backend — Code.gs
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SHEET_ID = '1JkYyu2iTUA6LvtYhr2E-l79Z826CeVqsnaJMi4F8SXQ';
+const ADMIN_PIN = '918778089412';
+
+// ── WEB APP ENTRY POINT ──────────────────────────────────────────────────────
+function doGet(e) {
+  const t = HtmlService.createTemplateFromFile('index');
+  t.isAdmin = (e.parameter && e.parameter.mode === 'adminarunn');
+
+  return t.evaluate()
+    .setTitle('DDCA League Points table viewer')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+// ── AUTHENTICATION ────────────────────────────────────────────────────────────
+function checkAdminPin(pin) { return pin === ADMIN_PIN; }
+
+// ── DATA FETCHING ─────────────────────────────────────────────────────────────
+function getPools() {
+  try {
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheet = ss.getSheetByName('Teams');
+    if (!sheet) throw new Error('Sheet "Teams" not found.');
+    const data = sheet.getDataRange().getValues();
+    if (data.length === 0) return [];
+    return data[0].filter(h => h && h.toString().trim() !== '');
+  } catch (e) {
+    throw new Error('Error fetching pools: ' + e.message);
+  }
+}
+
+function getTeams(poolName) {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const sheet = ss.getSheetByName('Teams');
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const colIndex = headers.indexOf(poolName);
+  if (colIndex === -1) return [];
+  const teams = [];
+  for (let i = 1; i < data.length; i++) {
+    const cell = data[i][colIndex];
+    if (cell && cell.toString().trim() !== '') teams.push(cell);
+  }
+  return teams;
+}
+
+function getGrounds() {
+  try {
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheet = ss.getSheetByName('Other info');
+    if (!sheet) return [];
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+    const data = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    return data.flat().filter(g => g && g.toString().trim() !== '');
+  } catch (e) { return []; }
+}
+
+// ── SCORING ENGINE ────────────────────────────────────────────────────────────
+function submitScore(form) {
+  if (form.pin !== ADMIN_PIN) throw new Error('Session expired or incorrect PIN.');
+
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const sheetName = form.pool.replace(/[^a-zA-Z0-9 \-]/g, '').trim();
+  let sheet = ss.getSheetByName(sheetName);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.appendRow([
+      'Date', 'Ground', 'Team A', 'Team B',
+      'Toss Winner', 'Toss Choice', 'Winner',
+      'Bat 1', 'Score 1', 'Overs 1', 'Wkts 1',
+      'Bat 2', 'Score 2', 'Overs 2', 'Wkts 2',
+      'Stats JSON'
+    ]);
+    sheet.getRange(1, 1, 1, 16).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const tA = form.teamA;
+  const tB = form.teamB;
+  for (let i = 1; i < data.length; i++) {
+    const rowA = data[i][2];
+    const rowB = data[i][3];
+    if ((rowA === tA && rowB === tB) || (rowA === tB && rowB === tA)) {
+      throw new Error('Match between ' + tA + ' and ' + tB + ' already exists!');
+    }
+  }
+
+  const sc1 = parseFloat(form.score1), ov1 = parseFloat(form.overs1), wk1 = parseInt(form.wkts1) || 0;
+  const sc2 = parseFloat(form.score2), ov2 = parseFloat(form.overs2), wk2 = parseInt(form.wkts2) || 0;
+  const totalOvers = parseFloat(form.matchOvers);
+
+  const nrrOv1 = (wk1 === 10) ? totalOvers : ov1;
+  const nrrOv2 = (wk2 === 10) ? totalOvers : ov2;
+
+  let pts1 = 0, pts2 = 0;
+  let winner = '';
+  let tbNote = '';
+
+  if (sc1 > sc2) {
+    winner = form.batFirst;
+    const margin = (sc1 - sc2) / sc1;
+    if (margin > 0.20) { pts1 = 5; pts2 = -1; }
+    else { pts1 = 4; pts2 = 0; }
+  } else if (sc2 > sc1) {
+    winner = form.batSecond;
+    if (ov2 <= (totalOvers * 0.8)) { pts2 = 5; pts1 = -1; }
+    else { pts2 = 4; pts1 = 0; }
+  } else {
+    if (ov1 !== ov2) {
+      if (ov1 < ov2) { winner = form.batFirst; pts1 = 4; pts2 = 0; tbNote = 'Won on lesser overs'; }
+      else { winner = form.batSecond; pts2 = 4; pts1 = 0; tbNote = 'Won on lesser overs'; }
+    } else if (wk1 !== wk2) {
+      if (wk1 < wk2) { winner = form.batFirst; pts1 = 4; pts2 = 0; tbNote = 'Won on lesser wkts'; }
+      else { winner = form.batSecond; pts2 = 4; pts1 = 0; tbNote = 'Won on lesser wkts'; }
+    } else {
+      winner = 'Tie'; pts1 = 2; pts2 = 2;
+    }
+  }
+
+  const matchStats = {
+    totalOvers: totalOvers,
+    tieBreaker: tbNote,
+    [form.batFirst]: { pts: pts1, runs: sc1, ov: ov1, wk: wk1, nrrOv: nrrOv1 },
+    [form.batSecond]: { pts: pts2, runs: sc2, ov: ov2, wk: wk2, nrrOv: nrrOv2 }
+  };
+
+  let matchDate = new Date();
+  if (form.date) {
+    if (String(form.date).match(/^\d{4}-\d{2}-\d{2}$/)) {
+      matchDate = new Date(form.date + "T12:00:00");
+    } else {
+      matchDate = new Date(form.date);
+    }
+  }
+  let formattedDate = Utilities.formatDate(matchDate, Session.getScriptTimeZone(), 'MM/dd/yyyy');
+
+  sheet.appendRow([
+    formattedDate, form.ground, form.teamA, form.teamB,
+    form.tossWinner, form.tossChoice, winner,
+    form.batFirst, sc1, ov1, wk1,
+    form.batSecond, sc2, ov2, wk2,
+    JSON.stringify(matchStats)
+  ]);
+
+  return 'Match recorded successfully!';
+}
+
+// ── DATA PROCESSING ───────────────────────────────────────────────────────────
+function processData(poolName) {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const sheetName = poolName.replace(/[^a-zA-Z0-9 \-]/g, '').trim();
+  const sheet = ss.getSheetByName(sheetName);
+
+  const allTeams = getTeams(poolName);
+  const table = {};
+  const matrix = {};
+
+  allTeams.forEach(function(t) {
+    table[t] = { name: t, p: 0, w: 0, l: 0, t: 0, pts: 0,
+      runsFor: 0, ovFor: 0, wkFor: 0,
+      runsAg: 0, ovAg: 0, wkAg: 0, matches: [] };
+    matrix[t] = {};
+  });
+
+  if (!sheet) return { table: [], matrix: matrix, sortedTeams: allTeams };
+
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    if (!row[15]) continue;
+
+    const stats = JSON.parse(row[15]);
+
+    const teams = Object.keys(stats).filter(k => {
+      return stats[k] !== null && typeof stats[k] === 'object' && 'pts' in stats[k];
+    });
+
+    if (teams.length < 2) continue;
+
+    const t1 = teams[0];
+    const t2 = teams[1];
+
+    if (!table[t1]) table[t1] = { name: t1, p:0, w:0, l:0, t:0, pts:0, runsFor:0, ovFor:0, wkFor:0, runsAg:0, ovAg:0, wkAg:0 };
+    if (!table[t2]) table[t2] = { name: t2, p:0, w:0, l:0, t:0, pts:0, runsFor:0, ovFor:0, wkFor:0, runsAg:0, ovAg:0, wkAg:0 };
+
+    const updateStats = function(team, my, opp) {
+      const t = table[team];
+      t.p++;
+      t.pts += my.pts;
+      if (my.pts >= 4) t.w++;
+      else if (my.pts === 2) t.t++;
+      else t.l++;
+
+      t.runsFor += my.runs;
+      t.wkFor += my.wk;
+      t.ovFor += (my.nrrOv !== undefined ? my.nrrOv : my.ov);
+
+      t.runsAg += opp.runs;
+      t.wkAg += opp.wk;
+      t.ovAg += (opp.nrrOv !== undefined ? opp.nrrOv : opp.ov);
+    };
+
+    updateStats(t1, stats[t1], stats[t2]);
+    updateStats(t2, stats[t2], stats[t1]);
+
+    if (!matrix[t1]) matrix[t1] = {};
+    if (!matrix[t2]) matrix[t2] = {};
+    var mDateStr_ = '';
+    try { mDateStr_ = row[0] ? Utilities.formatDate(new Date(row[0]), Session.getScriptTimeZone(), 'dd MMM yy') : ''; } catch(e_) {}
+    var mTotOv_ = stats.totalOvers || null;
+    var tbNote_ = stats.tieBreaker || '';
+
+    matrix[t1][t2] = { pts: stats[t1].pts, bat1: t1, bat2: t2,
+      s1: stats[t1].runs, ov1: stats[t1].ov, w1: stats[t1].wk,
+      s2: stats[t2].runs, ov2: stats[t2].ov, w2: stats[t2].wk,
+      totalOvers: mTotOv_, date: mDateStr_, tieBreaker: tbNote_ };
+
+    matrix[t2][t1] = { pts: stats[t2].pts, bat1: t1, bat2: t2,
+      s1: stats[t1].runs, ov1: stats[t1].ov, w1: stats[t1].wk,
+      s2: stats[t2].runs, ov2: stats[t2].ov, w2: stats[t2].wk,
+      totalOvers: mTotOv_, date: mDateStr_, tieBreaker: tbNote_ };
+
+    [t1, t2].forEach(function(team) {
+      var opp = team === t1 ? t2 : t1;
+      var my = stats[team], op = stats[opp];
+      if (table[team]) table[team].matches.push({
+        opp: opp, date: mDateStr_, pts: my.pts,
+        myR: my.runs, myOv: my.nrrOv || my.ov, myW: my.wk,
+        opR: op.runs, opOv: op.nrrOv || op.ov, opW: op.wk,
+        bat1: t1, totalOvers: mTotOv_
+      });
+    });
+  }
+
+  const finalTable = Object.values(table).map(function(t) {
+    const stdRateFor = t.ovFor === 0 ? 0 : (t.runsFor / t.ovFor);
+    const stdRateAg = t.ovAg === 0 ? 0 : (t.runsAg / t.ovAg);
+    const nrrICC = stdRateFor - stdRateAg;
+
+    const safeWkFor = t.wkFor === 0 ? 1 : t.wkFor;
+    const safeWkAg = t.wkAg === 0 ? 1 : t.wkAg;
+    const locRateFor = (t.ovFor * safeWkFor) === 0 ? 0 : (t.runsFor / (t.ovFor * safeWkFor));
+    const locRateAg = (t.ovAg * safeWkAg) === 0 ? 0 : (t.runsAg / (t.ovAg * safeWkAg));
+    const nrrDDCA = locRateFor - locRateAg;
+
+    return { ...t, nrrICC: nrrICC.toFixed(3), nrrDDCA: parseFloat(nrrDDCA.toFixed(4)) };
+  });
+
+  finalTable.sort(function(a, b) {
+    if (b.w !== a.w) return b.w - a.w;
+    if (b.pts !== a.pts) return b.pts - a.pts;
+    return b.nrrDDCA - a.nrrDDCA;
+  });
+
+  return {
+    table: finalTable,
+    matrix: matrix,
+    sortedTeams: finalTable.map(function(t) { return t.name; })
+  };
+}
+
+function getStandings(poolName) { return processData(poolName).table; }
+function getMatrixData(poolName) { return processData(poolName); }
+
+function getResults(poolName) {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheetName = poolName.replace(/[^a-zA-Z0-9 \-]/g, '').trim();
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return [];
+
+  var data = sheet.getDataRange().getValues();
+  var results = [];
+  var tz = Session.getScriptTimeZone();
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    if (!row[7] && !row[8]) continue;
+    var dateVal = row[0];
+    var dateStr = '';
+    var timestamp = 0;
+    try {
+      if (dateVal) {
+        var d = new Date(dateVal);
+        timestamp = d.getTime() || 0;
+        dateStr = Utilities.formatDate(d, tz, 'dd MMM yyyy');
+      }
+    } catch(e) {}
+    var stats = {};
+    try { stats = JSON.parse(row[15] || '{}'); } catch(e) {}
+    var tov = stats.totalOvers || 50;
+    var tbNote = stats.tieBreaker || '';
+    results.push({
+      timestamp: timestamp,
+      date: dateStr,
+      ground: (row[1] || '').toString(),
+      teamA: (row[2] || '').toString(),
+      teamB: (row[3] || '').toString(),
+      tossWinner: (row[4] || '').toString(),
+      tossChoice: (row[5] || '').toString(),
+      winner: (row[6] || '').toString(),
+      bat1: (row[7] || '').toString(),
+      score1: row[8] || 0,
+      overs1: row[9] || 0,
+      wkts1: row[10] || 0,
+      bat2: (row[11] || '').toString(),
+      score2: row[12] || 0,
+      overs2: row[13] || 0,
+      wkts2: row[14] || 0,
+      tov: tov,
+      tieBreaker: tbNote
+    });
+  }
+  results.sort(function(a, b) { return b.timestamp - a.timestamp; });
+  return results;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TNCA SYNC — SyncFunctions
+// ═══════════════════════════════════════════════════════════════════════════
+
+var SYNC_COMPETITION_IDS = [156, 157, 158, 159];
+var CLOUDFRONT_BASE = 'https://dqdkb7nduvxfx.cloudfront.net/districtfeeds';
+var SYNCED_SHEET_NAME = 'SyncedMatches';
+
+var SYNC_DIVISION_LABELS = {
+  156: '1st Division',
+  157: '2nd Division',
+  158: '3rd Division',
+  159: '4th Division'
+};
+
+function buildTeamPoolMap_() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName('Teams');
+  if (!sheet) return {};
+
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var map = {};
+
+  for (var col = 0; col < headers.length; col++) {
+    var poolName = (headers[col] || '').toString().trim();
+    if (!poolName) continue;
+    for (var row = 1; row < data.length; row++) {
+      var cell = (data[row][col] || '').toString().trim();
+      if (cell) map[cell.toUpperCase()] = poolName;
+    }
+  }
+  return map;
+}
+
+function resolvePool_(teamPoolMap, bat1Name, bat2Name) {
+  var norm1 = (bat1Name || '').toUpperCase().trim();
+  var norm2 = (bat2Name || '').toUpperCase().trim();
+
+  var pool1 = teamPoolMap[norm1] || null;
+  var pool2 = teamPoolMap[norm2] || null;
+
+  if (pool1 && pool1 === pool2) return pool1;
+  if (pool1 && !pool2) return pool1;
+  if (pool2 && !pool1) return pool2;
+
+  // Fallback 1: strip all spaces/punctuation to fix spacing typos
+  function stripStr(s) { return (s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+  var stripped1 = stripStr(norm1);
+  var stripped2 = stripStr(norm2);
+  var keys = Object.keys(teamPoolMap);
+  var fuzzy1 = keys.find(function(k) { return stripStr(k) === stripped1; });
+  var fuzzy2 = keys.find(function(k) { return stripStr(k) === stripped2; });
+  pool1 = fuzzy1 ? teamPoolMap[fuzzy1] : pool1;
+  pool2 = fuzzy2 ? teamPoolMap[fuzzy2] : pool2;
+  if (pool1 && pool1 === pool2) return pool1;
+
+  // Fallback 2: prefix match for longer names
+  if (!pool1) {
+    var starts1 = keys.find(function(k) {
+      var sk = stripStr(k);
+      return stripped1.length > 5 && (sk.indexOf(stripped1) === 0 || stripped1.indexOf(sk) === 0);
+    });
+    if (starts1) pool1 = teamPoolMap[starts1];
+  }
+  if (!pool2) {
+    var starts2 = keys.find(function(k) {
+      var sk = stripStr(k);
+      return stripped2.length > 5 && (sk.indexOf(stripped2) === 0 || stripped2.indexOf(sk) === 0);
+    });
+    if (starts2) pool2 = teamPoolMap[starts2];
+  }
+
+  if (pool1 && pool1 === pool2) return pool1;
+  if (pool1) return pool1;
+  if (pool2) return pool2;
+  return '';
+}
+
+function parseScoreSummary_(summary) {
+  if (!summary) return { runs: 0, wkts: 0, overs: 0 };
+  var m = summary.match(/^(\d+)(?:\/(\d+))?\s*\((\d+\.?\d*)\s*Ov\)/i);
+  if (!m) return { runs: 0, wkts: 0, overs: 0 };
+  return {
+    runs: parseInt(m[1], 10),
+    wkts: m[2] ? parseInt(m[2], 10) : 0,
+    overs: parseFloat(m[3])
+  };
+}
+
+function parseTossInfo_(tossDetails, tossTeam) {
+  var choice = '';
+  if (/elected to Field/i.test(tossDetails)) choice = 'Bowl';
+  else if (/elected to Bat/i.test(tossDetails)) choice = 'Bat';
+  return { winner: (tossTeam || '').trim(), choice: choice };
+}
+
+function getSyncedMatchIDs_() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(SYNCED_SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) return {};
+
+  var synced = {};
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, 1)
+    .getValues()
+    .forEach(function(row) { synced[String(row[0])] = true; });
+  return synced;
+}
+
+function getTNCAQueue() {
+  var synced = getSyncedMatchIDs_();
+  var teamPoolMap = buildTeamPoolMap_();
+  var queue = [];
+
+  SYNC_COMPETITION_IDS.forEach(function(compId) {
+    try {
+      var url = CLOUDFRONT_BASE + '/' + compId + '-matchschedule.js';
+      var response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+
+      if (response.getResponseCode() !== 200) {
+        Logger.log('HTTP ' + response.getResponseCode() + ' for comp ' + compId);
+        return;
+      }
+
+      var text = response.getContentText();
+      var jsonStr = text.replace(/^MatchSchedule\(/, '').replace(/\);\s*$/, '');
+      var data = JSON.parse(jsonStr);
+
+      (data.Matchsummary || []).forEach(function(m) {
+        if (m.MatchStatus !== 'Post') return;
+        if (synced[String(m.MatchID)]) return;
+
+        var bat1 = parseScoreSummary_(m.FirstBattingSummary);
+        var bat2 = parseScoreSummary_(m.SecondBattingSummary);
+        var toss = parseTossInfo_(m.TossDetails, m.TossTeam);
+
+        var resolvedPool = resolvePool_(
+          teamPoolMap,
+          m.FirstBattingTeamName,
+          m.SecondBattingTeamName
+        );
+
+        queue.push({
+          matchId: m.MatchID,
+          competitionId: compId,
+          divisionLabel: SYNC_DIVISION_LABELS[compId] || ('Comp ' + compId),
+          pool: resolvedPool,
+          date: m.MatchDate,
+          ground: (m.GroundName || '').trim(),
+          batFirstTeam: (m.FirstBattingTeamName || '').trim(),
+          batSecondTeam: (m.SecondBattingTeamName || '').trim(),
+          score1: bat1.runs, wkts1: bat1.wkts, overs1: bat1.overs,
+          score2: bat2.runs, wkts2: bat2.wkts, overs2: bat2.overs,
+          tov: parseInt(m.t_ov, 10) || (compId === 159 ? 25 : 50),
+          tossWinner: toss.winner,
+          tossChoice: toss.choice,
+          result: (m.Commentss || '').trim()
+        });
+      });
+
+    } catch (e) {
+      Logger.log('Error fetching comp ' + compId + ': ' + e.toString());
+    }
+  });
+
+  queue.sort(function(a, b) {
+    return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+  });
+
+  return queue;
+}
+
+function submitSyncedMatch(data) {
+  var result = submitScore(data);
+
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = ss.getSheetByName(SYNCED_SHEET_NAME);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(SYNCED_SHEET_NAME);
+    sheet.appendRow(['MatchID', 'CompetitionID', 'Pool', 'MatchDate', 'SyncedAt']);
+    sheet.getRange(1, 1, 1, 5).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+
+  sheet.appendRow([
+    data.matchId,
+    data.competitionId,
+    data.pool || '',
+    data.date || '',
+    new Date().toISOString()
+  ]);
+
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ONE-TIME SETUP
+// ═══════════════════════════════════════════════════════════════════════════
+function setupSpreadsheet() {
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  var POOLS = [
+    'I-Div Group A',
+    'I-Div Group B',
+    'II-Div Group A',
+    'II-Div Group B',
+    'III-Div Group A',
+    'III-Div Group B',
+    'IV-Division'
+  ];
+
+  var TEAMS = {
+    'I-Div Group A': [
+      'VIGNESH SPORTS CLUB',
+      'JAHIR CC,VDS',
+      "ST. PETER'S CC,KKL",
+      'DOMINATORS CC,PALANI',
+      'YUVARAJ YOUNGSTERS CC,PALANI',
+      'NPR CC,NATHAM',
+      'NPR GI CC,NATHAM'
+    ],
+    'I-Div Group B': [
+      "VIGNESH SPORTS JUNIOR'S CC,DGL",
+      'HARIVARNA CC,DGL',
+      'AM CC, DGL',
+      'PLAY BOYS CC,DGL',
+      'SRI VASANTHAS SWEETS CC,DGL',
+      'NIKE CC',
+      'JAHIR PROMISING XI,VEDASANDUR'
+    ],
+    'II-Div Group A': [
+      'ORANGE SHIRTS CC,DGL',
+      'YUVARAJ CC,PALANI',
+      'AIMSTAR CC, PAPPAMPATTI',
+      'EXPRESS XI, DINDIGUL',
+      'VETRI CC, DINDIGUL',
+      'RVS SC, DINDIGUL',
+      'SEENIBALA CC, VEDASANDUR'
+    ],
+    'II-Div Group B': [
+      'GRI, GANDHIGRAM',
+      'VOLCANO RIDERS CC, DINDIGUL',
+      'SAMIYARTHOTTAM CC,DINDIGUL',
+      'CLASSIC CC,AYYALUR',
+      'AADHITH CC, DINDIGUL',
+      'SAMURAI CC,ODDANCHATRAM',
+      'GODSON CC,DGL'
+    ],
+    'III-Div Group A': [
+      'KODAI CC, KODAI ROAD',
+      'SACHIN CC, DINDIGUL',
+      'CHALLENGERS CC,DGL',
+      'MANSUR CC,DINDIGUL',
+      'WARRIORS CC, NILAKKOTTAI',
+      'ALLROUNDERS CC, DGL'
+    ],
+    'III-Div Group B': [
+      'MANSUR YOUNGSTERS CC, DINDIGUL',
+      'SUBRAMANYA CC,PALANI',
+      'BHARATH CC, DINDIGUL',
+      'SKILL CC, ERIYODU',
+      'ERIYODU YOUNGSTERS CC',
+      'SKY CC ,DINDIGUL'
+    ],
+    'IV-Division': [
+      'NALLAMPATTI YOUNGSTAR CC',
+      'PSNA CET,DGL',
+      'ANGELCASTERS CC,DINDIGUL',
+      'MAJESTIC CC, DGL',
+      'CHAMPIONS CC,DGL',
+      'ELEVENSTAR CC',
+      'Kodaikanal XI',
+      'Kodaikanal 2'
+    ]
+  };
+
+  var MATCH_HEADERS = [
+    'Date', 'Ground', 'Team A', 'Team B',
+    'Toss Winner', 'Toss Choice', 'Winner',
+    'Bat 1', 'Score 1', 'Overs 1', 'Wkts 1',
+    'Bat 2', 'Score 2', 'Overs 2', 'Wkts 2',
+    'Stats JSON'
+  ];
+
+  var GROUNDS = [
+    'NPR Turf Ground',
+    'PSNA Cricket Ground',
+    'Richman Cricket Ground',
+    'RVS College Cricket Ground'
+  ];
+
+  function styleHeader(range) {
+    range.setFontWeight('bold')
+      .setBackground('#343a40')
+      .setFontColor('#ffffff');
+  }
+
+  function getOrCreate(name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) sh = ss.insertSheet(name);
+    return sh;
+  }
+
+  var teamsSheet = getOrCreate('Teams');
+  teamsSheet.clearContents();
+
+  var maxTeams = Math.max.apply(null, POOLS.map(function(p) {
+    return TEAMS[p].length;
+  }));
+
+  var teamsData = [POOLS.slice()];
+  for (var r = 0; r < maxTeams; r++) {
+    teamsData.push(POOLS.map(function(pool) {
+      return TEAMS[pool][r] || '';
+    }));
+  }
+  teamsSheet.getRange(1, 1, teamsData.length, POOLS.length).setValues(teamsData);
+  styleHeader(teamsSheet.getRange(1, 1, 1, POOLS.length));
+  teamsSheet.setFrozenRows(1);
+
+  POOLS.forEach(function(pool) {
+    var sh = getOrCreate(pool);
+    if (sh.getLastRow() === 0) {
+      var hdr = sh.getRange(1, 1, 1, MATCH_HEADERS.length);
+      hdr.setValues([MATCH_HEADERS]);
+      styleHeader(hdr);
+      sh.setFrozenRows(1);
+    }
+  });
+
+  var syncSheet = getOrCreate('SyncedMatches');
+  if (syncSheet.getLastRow() === 0) {
+    var syncHeaders = ['MatchID', 'CompetitionID', 'Pool', 'MatchDate', 'SyncedAt'];
+    var syncHdr = syncSheet.getRange(1, 1, 1, syncHeaders.length);
+    syncHdr.setValues([syncHeaders]);
+    styleHeader(syncHdr);
+    syncSheet.setFrozenRows(1);
+  }
+
+  var otherSheet = getOrCreate('Other info');
+  otherSheet.clearContents();
+  var groundsData = [['Ground']].concat(GROUNDS.map(function(g) { return [g]; }));
+  otherSheet.getRange(1, 1, groundsData.length, 1).setValues(groundsData);
+  styleHeader(otherSheet.getRange(1, 1, 1, 1));
+  otherSheet.setFrozenRows(1);
+
+  Logger.log('setupSpreadsheet complete.');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ONE-TIME UTILITY: PATCH MISSING DATES IN SYNCED MATCHES
+// ═══════════════════════════════════════════════════════════════════════════
+function patchSyncedMatchesDates() {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const sheet = ss.getSheetByName(SYNCED_SHEET_NAME);
+  if (!sheet) { Logger.log('SyncedMatches sheet not found!'); return; }
+
+  const matchDatesMap = {};
+  SYNC_COMPETITION_IDS.forEach(id => {
+    try {
+      const url = `${CLOUDFRONT_BASE}/${id}-matchschedule.js`;
+      const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+      if (res.getResponseCode() === 200) {
+        const text = res.getContentText();
+        const jsonStr = text.replace(/^MatchSchedule\(/, '').replace(/\);\s*$/, '');
+        const data = JSON.parse(jsonStr);
+        if (data.Matchsummary) {
+          data.Matchsummary.forEach(m => {
+            if (m.MatchID && m.MatchDate) matchDatesMap[String(m.MatchID)] = m.MatchDate;
+          });
+        }
+      }
+    } catch (e) { Logger.log("Failed to fetch comp " + id + ": " + e); }
+  });
+
+  const dataRange = sheet.getDataRange();
+  const data = dataRange.getValues();
+  let updatedCount = 0;
+  for (let i = 1; i < data.length; i++) {
+    const matchId = String(data[i][0]);
+    const existingDate = data[i][3];
+    if (!existingDate && matchDatesMap[matchId]) { data[i][3] = matchDatesMap[matchId]; updatedCount++; }
+  }
+  if (updatedCount > 0) {
+    dataRange.setValues(data);
+    Logger.log(`✅ Successfully patched ${updatedCount} missing dates in SyncedMatches!`);
+  } else {
+    Logger.log("ℹ️ No missing dates were found or patched.");
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ONE-TIME UTILITY: FIX MISSING DATES AND TOTAL OVERS
+// ═══════════════════════════════════════════════════════════════════════════
+function fixMissingTNCAData() {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  let apiMatches = [];
+
+  SYNC_COMPETITION_IDS.forEach(id => {
+    try {
+      const res = UrlFetchApp.fetch(CLOUDFRONT_BASE + '/' + id + '-matchschedule.js', { muteHttpExceptions: true });
+      if (res.getResponseCode() === 200) {
+        const text = res.getContentText();
+        const jsonStr = text.replace(/^MatchSchedule\(/, '').replace(/\);\s*$/, '');
+        const data = JSON.parse(jsonStr);
+        if (data.Matchsummary) {
+          apiMatches = apiMatches.concat(data.Matchsummary.filter(m => m.MatchStatus === 'Post'));
+        }
+      }
+    } catch (e) { Logger.log("Failed to fetch comp " + id + ": " + e); }
+  });
+
+  function getRuns(summary) {
+    if (!summary) return 0;
+    const m = summary.match(/^(\d+)/);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  const poolNames = getPools();
+  poolNames.forEach(pool => {
+    const sheetName = pool.replace(/[^a-zA-Z0-9 \-]/g, '').trim();
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return;
+
+    const data = sheet.getDataRange().getValues();
+    let sheetWasUpdated = false;
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const score1 = parseInt(row[8], 10) || 0;
+      const score2 = parseInt(row[12], 10) || 0;
+      const statsJsonStr = row[15];
+      if (!statsJsonStr) continue;
+
+      const matchedApi = apiMatches.find(m => {
+        const apiS1 = getRuns(m.FirstBattingSummary);
+        const apiS2 = getRuns(m.SecondBattingSummary);
+        return (score1 === apiS1 && score2 === apiS2) || (score1 === apiS2 && score2 === apiS1);
+      });
+
+      if (matchedApi) {
+        let rowNeedsUpdate = false;
+        if (matchedApi.MatchDate) { data[i][0] = matchedApi.MatchDate; rowNeedsUpdate = true; }
+        const stats = JSON.parse(statsJsonStr);
+        if (!stats.totalOvers) {
+          stats.totalOvers = matchedApi.t_ov ? parseInt(matchedApi.t_ov, 10) : 50;
+          data[i][15] = JSON.stringify(stats);
+          rowNeedsUpdate = true;
+        }
+        if (rowNeedsUpdate) sheetWasUpdated = true;
+      }
+    }
+
+    if (sheetWasUpdated) {
+      sheet.getDataRange().setValues(data);
+      Logger.log("✅ Successfully updated missing data for: " + sheetName);
+    }
+  });
+
+  Logger.log("🎉 Data fix process complete!");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AI CHATBOT — Gemini Integration
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * getChatbotResponse()
+ * Called via google.script.run from the floating chatbot UI.
+ *
+ * @param {string} userMessage   - The user's latest question.
+ * @param {Array}  chatHistory   - Previous turns [{role:'user'|'model', text:'...'}]
+ * @returns {string} Gemini's response text.
+ */
+function getChatbotResponse(userMessage, chatHistory) {
+  try {
+    // ── 1. GATHER LIVE TOURNAMENT CONTEXT ──────────────────────────────
+    const pools = getPools();
+    let contextData = 'DDCA LEAGUE 2025-26 — LIVE TOURNAMENT DATA\n';
+    contextData    += '==========================================\n\n';
+
+    pools.forEach(function(pool) {
+      try {
+        const standings = getStandings(pool);
+        contextData += '📊 POOL: ' + pool + ' — POINTS TABLE\n';
+        contextData += 'Rank | Team | Played | Won | Lost | Tied | Points | NRR(DDCA) | NRR(ICC)\n';
+        standings.forEach(function(t, i) {
+          contextData += (i + 1) + '. ' + t.name +
+            ' | P:' + t.p + ' W:' + t.w + ' L:' + t.l + ' T:' + t.t +
+            ' Pts:' + t.pts +
+            ' NRR(DDCA):' + t.nrrDDCA +
+            ' NRR(ICC):' + t.nrrICC + '\n';
+        });
+        contextData += '\n';
+
+        const results = getResults(pool);
+        if (results.length > 0) {
+          contextData += '🏏 ' + pool + ' — RECENT RESULTS\n';
+          results.slice(0, 5).forEach(function(r) {
+            contextData +=
+              r.date + ' @ ' + r.ground + '\n' +
+              '  ' + r.bat1 + ': ' + r.score1 + '/' + r.wkts1 + ' (' + r.overs1 + ' ov)' +
+              '  vs  ' +
+              r.bat2 + ': ' + r.score2 + '/' + r.wkts2 + ' (' + r.overs2 + ' ov)\n' +
+              '  Toss: ' + r.tossWinner + ' elected to ' + r.tossChoice +
+              '  |  Winner: ' + r.winner + '\n';
+          });
+          contextData += '\n';
+        }
+      } catch (poolErr) {
+        Logger.log('Context error for pool ' + pool + ': ' + poolErr);
+      }
+    });
+
+    // ── 2. SYSTEM INSTRUCTION ──────────────────────────────────────────
+    const systemInstruction =
+      'You are an AI cricket analyst and assistant for the DDCA (Dindigul District Cricket Association) ' +
+      'League 2025-26. You have access to live, real-time tournament data.\n\n' +
+
+      'YOUR CAPABILITIES:\n' +
+      '• Answer questions about current standings, points tables, and NRR for any pool.\n' +
+      '• Analyse match results and batting/bowling performances.\n' +
+      '• Give win predictions based on current form, NRR, head-to-head records, and playing conditions.\n' +
+      '• Suggest batting and bowling strategies for upcoming matches.\n' +
+      '• Explain cricket rules: NRR calculation, DLS method, powerplay rules, etc.\n' +
+      '• Discuss qualification scenarios (what a team needs to qualify or be eliminated).\n\n' +
+
+      'SCORING SYSTEM (DDCA-specific):\n' +
+      '• Batting team wins by >20% run margin → 5 pts (winner) / -1 pt (loser).\n' +
+      '• Normal run/wicket win → 4 pts (winner) / 0 pts (loser).\n' +
+      '• Bowling team wins within 80% of total overs → 5 pts / -1 pt.\n' +
+      '• Tie → 2 pts each.\n\n' +
+
+      'NRR CALCULATION (DDCA method):\n' +
+      '  Rate = Runs / (Overs × Wickets)\n' +
+      '  NRR = (Run Rate For / Wickets Rate) − (Run Rate Against / Wickets Rate Against)\n' +
+      '  All-out innings count as full match overs for NRR.\n\n' +
+
+      'TONE: Be concise, specific, and data-driven. Always cite actual figures from the live data. ' +
+      'For predictions, clearly label them as projections. Be encouraging and cricket-passionate.';
+
+    // ── 3. BUILD MULTI-TURN CONVERSATION PAYLOAD ──────────────────────
+    const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+    const apiUrl =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey;
+
+    const contents = [];
+
+    if (chatHistory && chatHistory.length > 0) {
+      chatHistory.forEach(function(msg) {
+        contents.push({ role: msg.role, parts: [{ text: msg.text }] });
+      });
+    }
+
+    contents.push({
+      role: 'user',
+      parts: [{
+        text: '[LIVE TOURNAMENT DATA — use this for your answer]\n' +
+              contextData +
+              '\n[USER QUESTION]\n' + userMessage
+      }]
+    });
+
+    const payload = {
+      system_instruction: { parts: [{ text: systemInstruction }] },
+      contents: contents,
+      generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 8192,
+          thinkingConfig: { thinkingBudget: 0 }
+        }
+    };
+
+    const options = {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(apiUrl, options);
+    const responseData = JSON.parse(response.getContentText());
+
+    if (responseData.candidates && responseData.candidates[0] &&
+        responseData.candidates[0].content) {
+      return responseData.candidates[0].content.parts[0].text;
+    }
+
+    if (responseData.error) {
+      Logger.log('Gemini API error: ' + JSON.stringify(responseData.error));
+      return 'Gemini API error: ' + (responseData.error.message || 'Unknown error.');
+    }
+
+    return 'I could not generate a response right now. Please try again.';
+
+  } catch (e) {
+    Logger.log('getChatbotResponse error: ' + e.toString());
+    return 'The AI assistant encountered an error: ' + e.message;
+  }
+}
+
+/**
+ * callGeminiAPI() — kept for backward-compatibility
+ */
+function callGeminiAPI(userPrompt, contextData) {
+  const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  const apiUrl =
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + apiKey;
+
+  const payload = {
+    contents: [{ parts: [{ text: 'Context:\n' + contextData + '\n\nUser Question: ' + userPrompt }] }],
+    generationConfig: {
+    temperature: 0.2,
+    maxOutputTokens: 8192,
+    thinkingConfig: { thinkingBudget: 0 }
+  }
+  };
+
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(apiUrl, options);
+    const data = JSON.parse(response.getContentText());
+    return data.candidates[0].content.parts[0].text;
+  } catch (error) {
+    Logger.log('Gemini API Error: ' + error);
+    return 'The AI assistant is currently unavailable. Please check the points table manually.';
+  }
+}
+
+function authorizeScript() {
+  UrlFetchApp.fetch("https://google.com");
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MATCH PREDICTION POLL
+// ═══════════════════════════════════════════════════════════════════════════
+
+function savePollVote(pool, team) {
+  try {
+    var ss = SpreadsheetApp.openById(SHEET_ID);
+    var sheet = ss.getSheetByName('PollVotes');
+    if (!sheet) {
+      sheet = ss.insertSheet('PollVotes');
+      sheet.appendRow(['Pool', 'Team', 'Timestamp']);
+      sheet.getRange(1, 1, 1, 3).setFontWeight('bold');
+      sheet.setFrozenRows(1);
+    }
+    sheet.appendRow([pool, team, new Date().toISOString()]);
+    return true;
+  } catch(e) {
+    Logger.log('savePollVote error: ' + e);
+    return false;
+  }
+}
+
+function getPollVotes(pool) {
+  try {
+    var ss = SpreadsheetApp.openById(SHEET_ID);
+    var sheet = ss.getSheetByName('PollVotes');
+    if (!sheet || sheet.getLastRow() < 2) return {};
+    var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getValues();
+    var counts = {};
+    data.forEach(function(row) {
+      if ((row[0] || '').toString().trim() === pool.trim()) {
+        var t = (row[1] || '').toString().trim();
+        if (t) counts[t] = (counts[t] || 0) + 1;
+      }
+    });
+    return counts;
+  } catch(e) {
+    Logger.log('getPollVotes error: ' + e);
+    return {};
+  }
+}

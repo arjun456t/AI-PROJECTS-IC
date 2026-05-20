@@ -1,0 +1,3022 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .loader { display: none; }
+    input[readonly] { background-color: #e9ecef; cursor: not-allowed; }
+    .table-sm td, .table-sm th { font-size: 0.9rem; vertical-align: middle; }
+
+    /* --- APP HEADER --- */
+    .app-header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+      border-radius: 14px; padding: 14px 18px; margin-bottom: 14px; color: white;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .app-header-emoji { font-size: 2rem; line-height: 1; flex-shrink: 0; }
+    .app-header-title { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.2px; line-height: 1.2; }
+    .app-header-sub { font-size: 0.65rem; opacity: 0.6; letter-spacing: 0.07em; text-transform: uppercase; margin-top: 3px; }
+
+    /* --- PILL TAB BAR --- */
+    #myTab.nav-tabs {
+      background: #1e1e2e; border-radius: 12px; padding: 4px;
+      border: none; gap: 2px; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    }
+    #myTab .nav-link {
+      border-radius: 9px; border: none; color: rgba(255,255,255,0.5);
+      font-weight: 500; white-space: nowrap; transition: all 0.15s;
+    }
+    #myTab .nav-link:hover { color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.08); }
+    #myTab .nav-link.active {
+      background: #0d6efd !important; color: #fff !important; font-weight: 700;
+      border: none !important; box-shadow: 0 2px 10px rgba(13,110,253,0.4);
+    }
+
+    /* --- POINTS TABLE (desktop) --- */
+    .qualifier-row { border-left: 5px solid #198754; background-color: #f8fff9; }
+
+    /* --- STANDING CARDS (mobile points table) --- */
+    .standing-card {
+      display: flex; align-items: center; gap: 12px;
+      background: white; border-radius: 12px; padding: 11px 14px;
+      margin-bottom: 8px; border: 1px solid #e9ecef;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06); border-left: 3px solid #dee2e6;
+    }
+    .standing-card.qualifier { border-left: 4px solid #198754; background: #fafffe; }
+    .rank-badge {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: #dee2e6; color: #495057; font-size: 0.82rem; font-weight: 700;
+    }
+    .rank-1 .rank-badge { background: linear-gradient(135deg, #FFD700, #FF8C00); color: #1a1a1a; box-shadow: 0 2px 6px rgba(255,165,0,0.4); }
+    .rank-2 .rank-badge { background: linear-gradient(135deg, #C8C8C8, #909090); color: #1a1a1a; }
+    .standing-info { flex: 1; min-width: 0; }
+    .standing-name { font-size: 0.82rem; font-weight: 700; line-height: 1.3; color: #212529; }
+    .standing-meta { font-size: 0.7rem; color: #6c757d; margin-top: 2px; }
+    .standing-nrr  { font-size: 0.67rem; color: #adb5bd; margin-top: 1px; }
+    .qual-chip { display: inline-block; font-size: 0.5rem; background: #198754; color: #fff; padding: 1px 5px; border-radius: 3px; font-weight: 700; text-transform: uppercase; vertical-align: middle; margin-left: 5px; letter-spacing: 0.03em; }
+    .standing-pts-col { text-align: right; flex-shrink: 0; }
+    .standing-pts-num { font-size: 1.6rem; font-weight: 900; line-height: 1; color: #0d6efd; }
+    .standing-pts-label { font-size: 0.56rem; text-transform: uppercase; color: #adb5bd; font-weight: 600; letter-spacing: 0.04em; }
+
+    /* --- MATRIX --- */
+    .matrix-table-container { overflow-x: auto; margin-bottom: 1rem; }
+    .matrix-table { table-layout: fixed; width: auto; min-width: 100%; border-collapse: separate; border-spacing: 0; }
+    .matrix-header-cell { width: 90px; vertical-align: bottom; padding-bottom: 10px; border-bottom: 2px solid #343a40; }
+    .vertical-text { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: 110px; margin: 0 auto; text-align: left; font-weight: 600; color: #495057; }
+    .team-row-header { width: 140px; text-align: left; font-weight: bold; background-color: #fff; border-right: 3px solid #dee2e6; padding-left: 10px !important; position: sticky; left: 0; z-index: 2; }
+    thead .team-row-header { z-index: 3; }
+    .matrix-cell { height: 45px; font-weight: 700; font-size: 1.2rem; border: 1px solid #dee2e6; }
+    .self-match { background-color: #e9ecef !important; border: 1px solid #dee2e6; }
+    .summary-col { width: 50px; background-color: #f8f9fa; font-size: 0.8rem; color: #6c757d; border-bottom: 1px solid #dee2e6; }
+    .summary-divider { border-left: 3px double #adb5bd !important; }
+    .bg-win-bonus { background-color: #198754 !important; color: #ffffff !important; }
+    .bg-win { background-color: #d1e7dd !important; color: #0f5132 !important; }
+    .bg-loss { background-color: #f8d7da !important; color: #842029 !important; }
+    .bg-loss-bonus { background-color: #dc3545 !important; color: #ffffff !important; }
+    .bg-tie { background-color: #fff3cd !important; color: #664d03 !important; }
+    .matrix-col-num { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: #343a40; color: #fff; font-size: 0.68rem; font-weight: 700; margin: 0 auto; }
+    .matrix-team-key { background: #f8f9fa; border-radius: 8px; padding: 10px 12px; margin-top: 10px; }
+    .matrix-team-key .key-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 0.78rem; border-bottom: 1px solid #e9ecef; }
+    .matrix-team-key .key-row:last-child { border-bottom: none; }
+    .matrix-key-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #343a40; color: #fff; font-size: 0.65rem; font-weight: 700; flex-shrink: 0; }
+
+    /* --- NRR TOOLTIP --- */
+    .nrr-info-icon { cursor: pointer; font-size: 0.78em; opacity: 0.6; transition: opacity 0.15s; vertical-align: super; }
+    .nrr-info-icon:hover { opacity: 1; }
+    .nrr-popover-content { font-size: 0.82rem; min-width: 220px; }
+    .nrr-popover-content .formula-line { color: #6c757d; font-size: 0.75rem; margin-top: 4px; border-top: 1px solid #dee2e6; padding-top: 4px; }
+
+    /* --- MATCH CARDS (mobile results) --- */
+    .match-card {
+      background: white; border-radius: 10px; padding: 11px 13px;
+      margin-bottom: 8px; border: 1px solid #e9ecef;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-left: 3px solid #dee2e6;
+    }
+    .match-card.mc-win  { border-left-color: #198754; }
+    .match-card.mc-loss { border-left-color: #dc3545; }
+    .match-meta { font-size: 0.68rem; color: #adb5bd; margin-bottom: 7px; display: flex; gap: 6px; align-items: center; }
+    .mc-ground { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .match-innings { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0; }
+    .match-innings + .match-innings { border-top: 1px solid #f5f5f5; }
+    .mc-team { font-size: 0.79rem; font-weight: 600; color: #212529; flex: 1; padding-right: 8px; }
+    .mc-score { font-size: 0.79rem; font-family: 'Courier New', monospace; color: #495057; white-space: nowrap; }
+    .match-result { margin-top: 7px; padding-top: 6px; border-top: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+    .mc-pts-info { font-size: 0.65rem; color: #adb5bd; }
+
+    /* --- RESULTS TAB (desktop) --- */
+    .result-win-row  { background-color: #f0fff4 !important; }
+    .result-loss-row { background-color: #fff5f5 !important; }
+    .score-display   { font-weight: 700; white-space: nowrap; }
+    .winner-badge    { font-size: 0.75rem; }
+    .bonus-chip { background-color: rgba(25, 135, 84, 0.1); color: #198754; border: 1px solid rgba(25, 135, 84, 0.2); padding: 2px 6px; border-radius: 12px; font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; display: inline-block; white-space: nowrap; }
+    .mc-top-right { position: absolute; top: 11px; right: 13px; font-size: 0.65rem; color: #6c757d; font-weight: 600; border: 1px solid #dee2e6; padding: 2px 6px; border-radius: 4px; background: #f8f9fa; }
+    .match-card-result { background-color: #f8f9fa; border-radius: 6px; padding: 7px 10px; margin-top: 10px; font-size: 0.75rem; font-weight: 600; color: #212529; display: flex; justify-content: space-between; align-items: center; border: 1px solid #e9ecef; }
+
+    /* --- SYNC QUEUE --- */
+    .sync-card { transition: opacity 0.3s ease; }
+    .sync-card.is-saved { opacity: 0.6; }
+    .sync-card.is-skipped { opacity: 0.35; }
+    .sync-source-badge { font-size: 0.7rem; }
+    .queue-count-badge { font-size: 1rem; }
+    .sync-field-label { font-size: 0.75rem; font-weight: 600; color: #6c757d; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 3px; }
+
+    /* --- MOBILE OVERRIDES --- */
+    @media (max-width: 576px) {
+      #myTab .nav-link { font-size: 0.78rem; padding: 0.38rem 0.55rem; }
+      .team-row-header { width: 108px; font-size: 0.71rem; }
+      .matrix-header-cell { width: 34px; padding-bottom: 6px; }
+      .vertical-text { display: none; }
+      .matrix-cell { height: 36px; font-size: 1rem; }
+      .summary-col { width: 32px; font-size: 0.7rem; }
+    }
+
+    /* ═══════════════════════════════════════════════════════════
+       AI CHATBOT — Premium Redesign
+       ═══════════════════════════════════════════════════════════ */
+
+    /* ── FAB ── */
+    #ddca-chat-fab {
+      position: fixed; bottom: 28px; right: 28px;
+      width: 64px; height: 64px; border-radius: 50%;
+      background: linear-gradient(145deg, #15803d 0%, #22c55e 100%);
+      box-shadow: 0 6px 28px rgba(34,197,94,0.50);
+      border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999;
+      transition: transform 0.3s cubic-bezier(.34,1.56,.64,1), box-shadow 0.25s ease;
+    }
+    #ddca-chat-fab::before {
+      content: ''; position: absolute; inset: -7px; border-radius: 50%;
+      border: 2.5px solid rgba(34,197,94,0.35);
+      animation: ddcaPulse 2.6s ease-out infinite;
+      pointer-events: none;
+    }
+    @keyframes ddcaPulse {
+      0%   { transform: scale(1);   opacity: 0.7; }
+      100% { transform: scale(1.55);opacity: 0; }
+    }
+    #ddca-chat-fab:hover { transform: scale(1.12) rotate(-8deg); box-shadow: 0 10px 38px rgba(34,197,94,0.65); }
+    #ddca-chat-fab svg { width: 28px; height: 28px; fill: #fff; position: relative; z-index: 1; }
+
+    #ddca-chat-badge {
+      position: absolute; top: -3px; right: -3px;
+      background: #ef4444; color: #fff; border-radius: 50%;
+      width: 22px; height: 22px; font-size: 11px; font-weight: 800;
+      display: none; align-items: center; justify-content: center;
+      border: 2px solid #fff; box-shadow: 0 2px 6px rgba(239,68,68,0.5);
+      animation: badgePop 0.35s cubic-bezier(.34,1.56,.64,1);
+    }
+    @keyframes badgePop { from { transform: scale(0); } to { transform: scale(1); } }
+
+    /* ── CHAT WINDOW ── */
+    #ddca-chat-window {
+      position: fixed; bottom: 104px; right: 28px;
+      width: 385px; height: 580px; max-height: calc(100vh - 130px);
+      border-radius: 24px; overflow: hidden;
+      display: flex; flex-direction: column; z-index: 9998;
+      background: #fff;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.18), 0 4px 20px rgba(0,0,0,0.10);
+      border: 1px solid rgba(0,0,0,0.07);
+      transform: scale(0.88) translateY(24px); opacity: 0; pointer-events: none;
+      transform-origin: bottom right;
+      transition: transform 0.3s cubic-bezier(.34,1.56,.64,1), opacity 0.22s ease,
+                  width 0.35s ease, height 0.35s ease, max-height 0.35s ease,
+                  bottom 0.3s ease, right 0.3s ease, border-radius 0.3s ease;
+    }
+    #ddca-chat-window.ddca-open {
+      transform: scale(1) translateY(0); opacity: 1; pointer-events: all;
+    }
+    #ddca-chat-window.ddca-expanded {
+      width: min(780px, calc(100vw - 40px));
+      height: calc(100vh - 120px); max-height: calc(100vh - 120px);
+      bottom: 20px; right: 20px;
+    }
+    @media (max-width: 600px) {
+      #ddca-chat-window { width: calc(100vw - 16px); right: 8px; bottom: 90px; border-radius: 20px; }
+      #ddca-chat-fab    { right: 18px; bottom: 18px; }
+      #ddca-chat-window.ddca-expanded {
+        width: 100vw; height: 100dvh; max-height: 100dvh;
+        bottom: 0; right: 0; border-radius: 0;
+      }
+    }
+
+    /* ── HEADER ── */
+    #ddca-chat-header {
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a2f 60%, #15803d 100%);
+      color: #fff; padding: 14px 16px;
+      display: flex; align-items: center; gap: 11px; flex-shrink: 0;
+      position: relative; overflow: hidden;
+    }
+    #ddca-chat-header::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+      animation: headerSheen 4s ease-in-out infinite;
+    }
+    @keyframes headerSheen {
+      0%,100% { transform: translateX(-100%); }
+      50%      { transform: translateX(100%); }
+    }
+    .ddca-avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; flex-shrink: 0;
+      box-shadow: 0 0 0 3px rgba(34,197,94,0.3);
+      position: relative; z-index: 1;
+    }
+    .ddca-header-text { flex: 1; position: relative; z-index: 1; }
+    .ddca-header-text h4 { margin: 0; font-size: 14.5px; font-weight: 700; letter-spacing: 0.2px; line-height: 1.2; }
+    .ddca-header-text .ddca-status {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 10.5px; opacity: 0.8; margin-top: 2px;
+    }
+    .ddca-status-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: #4ade80; flex-shrink: 0;
+      animation: statusPulse 2s ease-in-out infinite;
+    }
+    @keyframes statusPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(74,222,128,0.5); } 50% { box-shadow: 0 0 0 4px rgba(74,222,128,0); } }
+    #ddca-clear-btn {
+      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 12px; color: rgba(255,255,255,0.9); font-size: 10.5px;
+      cursor: pointer; padding: 3px 10px; transition: all 0.18s;
+      position: relative; z-index: 1;
+    }
+    #ddca-clear-btn:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.4); }
+    #ddca-expand-btn, #ddca-chat-close {
+      background: rgba(255,255,255,0.08); border: none; color: #fff;
+      cursor: pointer; opacity: 0.85; line-height: 1; padding: 6px 7px;
+      border-radius: 10px; transition: opacity 0.15s, background 0.15s;
+      position: relative; z-index: 1;
+    }
+    #ddca-chat-close { font-size: 18px; }
+    #ddca-expand-btn { font-size: 14px; }
+    #ddca-expand-btn:hover, #ddca-chat-close:hover { opacity: 1; background: rgba(255,255,255,0.18); }
+
+    /* ── SUGGESTION CHIPS ── */
+    #ddca-suggestions {
+      padding: 9px 12px 8px; display: flex; gap: 7px; flex-wrap: nowrap;
+      overflow-x: auto; flex-shrink: 0;
+      background: linear-gradient(180deg, #f0fdf4, #f8fafc);
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+      -webkit-overflow-scrolling: touch;
+    }
+    #ddca-suggestions::-webkit-scrollbar { display: none; }
+    .ddca-chip {
+      background: #fff; color: #15803d;
+      border: 1.5px solid #bbf7d0;
+      border-radius: 20px; padding: 5px 13px; font-size: 11.5px; font-weight: 600;
+      cursor: pointer; white-space: nowrap; flex-shrink: 0;
+      transition: all 0.2s ease;
+      box-shadow: 0 1px 4px rgba(21,128,61,0.1);
+    }
+    .ddca-chip:hover { background: #15803d; color: #fff; border-color: #15803d; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(21,128,61,0.25); }
+
+    /* ── MESSAGES AREA ── */
+    #ddca-chat-messages {
+      flex: 1; overflow-y: auto; padding: 16px 14px;
+      display: flex; flex-direction: column; gap: 12px;
+      background: #f8fafc; scroll-behavior: smooth;
+      position: relative;
+    }
+    #ddca-chat-messages::-webkit-scrollbar { width: 5px; }
+    #ddca-chat-messages::-webkit-scrollbar-track { background: transparent; }
+    #ddca-chat-messages::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 4px; }
+    #ddca-chat-messages::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.22); }
+
+    /* Scroll-to-bottom button */
+    #ddca-scroll-btn {
+      position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%) scale(0);
+      background: #fff; border: 1.5px solid #bbf7d0; border-radius: 20px;
+      padding: 5px 14px; font-size: 11.5px; font-weight: 600; color: #15803d;
+      cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      transition: transform 0.25s cubic-bezier(.34,1.56,.64,1), opacity 0.2s;
+      opacity: 0; white-space: nowrap; z-index: 10;
+    }
+    #ddca-scroll-btn.visible { transform: translateX(-50%) scale(1); opacity: 1; }
+    #ddca-scroll-btn:hover { background: #15803d; color: #fff; border-color: #15803d; }
+
+    /* ── MESSAGE BUBBLES ── */
+    .ddca-msg {
+      max-width: 88%; display: flex; flex-direction: column; gap: 4px;
+      animation: msgIn 0.3s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    .ddca-msg.ddca-user { align-self: flex-end; align-items: flex-end; }
+    .ddca-msg.ddca-bot  { align-self: flex-start; align-items: flex-start; }
+    #ddca-chat-window.ddca-expanded .ddca-msg { max-width: 76%; }
+
+    @keyframes msgIn {
+      from { transform: translateY(12px) scale(0.95); opacity: 0; }
+      to   { transform: translateY(0)    scale(1);    opacity: 1; }
+    }
+
+    .ddca-bubble {
+      padding: 10px 14px; border-radius: 18px;
+      font-size: 13.5px; line-height: 1.6; word-break: break-word;
+    }
+    .ddca-user .ddca-bubble {
+      background: linear-gradient(145deg, #16a34a, #22c55e);
+      color: #fff; border-bottom-right-radius: 5px;
+      white-space: pre-wrap;
+      box-shadow: 0 4px 18px rgba(34,197,94,0.3);
+    }
+    .ddca-bot .ddca-bubble {
+      background: #fff; color: #111827;
+      border-bottom-left-radius: 5px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      border: 1px solid rgba(0,0,0,0.06);
+      border-left: 3px solid #22c55e;
+    }
+
+    /* Rich text */
+    .ddca-bubble strong { font-weight: 700; color: #15803d; }
+    .ddca-user .ddca-bubble strong { color: #bbf7d0; }
+    .ddca-bubble em { font-style: italic; color: #374151; }
+    .ddca-user .ddca-bubble em { color: rgba(255,255,255,0.85); }
+    .ddca-bubble code {
+      background: #f0fdf4; border-radius: 5px; padding: 1px 6px;
+      font-size: 12px; font-family: 'Courier New', monospace;
+      color: #166534; border: 1px solid #bbf7d0;
+    }
+    .ddca-h2 {
+      font-weight: 800; font-size: 13.5px; color: #15803d;
+      margin: 10px 0 4px; padding-bottom: 4px;
+      border-bottom: 2px solid #dcfce7; display: block;
+    }
+    .ddca-h3 { font-weight: 700; font-size: 13px; color: #166534; margin: 7px 0 3px; display: block; }
+    .ddca-bubble ul, .ddca-bubble ol { margin: 5px 0 5px 20px; padding: 0; }
+    .ddca-bubble li { margin-bottom: 3px; }
+
+    /* Tables in chat */
+    .ddca-table-wrap {
+      overflow-x: auto; margin: 8px 0; border-radius: 10px;
+      border: 1px solid #bbf7d0; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .ddca-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 220px; }
+    .ddca-table th {
+      background: linear-gradient(135deg,#15803d,#166534); color: #fff;
+      padding: 7px 11px; text-align: left; font-weight: 700;
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .ddca-table td { padding: 6px 11px; border-bottom: 1px solid #f0fdf4; color: #374151; }
+    .ddca-table tr:last-child td { border-bottom: none; }
+    .ddca-table tr:nth-child(even) td { background: #f0fdf4; }
+
+    /* Timestamp + copy row */
+    .ddca-msg-actions { display: flex; align-items: center; gap: 6px; padding: 2px 4px; }
+    .ddca-ts { font-size: 10px; color: #9ca3af; }
+    .ddca-copy-btn {
+      background: transparent; border: 1px solid #e5e7eb;
+      border-radius: 8px; padding: 2px 8px; font-size: 10.5px;
+      cursor: pointer; color: #9ca3af; transition: all 0.18s;
+    }
+    .ddca-copy-btn:hover { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+    .ddca-copy-btn.ddca-copied { color: #15803d; border-color: #22c55e; background: #f0fdf4; }
+
+    /* Follow-up chips */
+    .ddca-followup { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; padding: 0 2px; }
+    .ddca-fu-chip {
+      background: #fff; color: #15803d;
+      border: 1.5px solid #bbf7d0; border-radius: 14px;
+      padding: 4px 11px; font-size: 11px; font-weight: 600;
+      cursor: pointer; white-space: nowrap; transition: all 0.2s;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .ddca-fu-chip:hover { background: #15803d; color: #fff; border-color: #15803d; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(21,128,61,0.22); }
+
+    /* ── TYPING INDICATOR ── */
+    #ddca-typing { display: none; align-self: flex-start; }
+    #ddca-typing .ddca-bubble {
+      background: #fff; padding: 12px 16px; border-bottom-left-radius: 5px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.06);
+      border-left: 3px solid #22c55e; display: flex; align-items: center; gap: 8px;
+    }
+    .ddca-typing-label { font-size: 11px; color: #6b7280; font-style: italic; }
+    .ddca-dots { display: flex; gap: 4px; align-items: center; }
+    .ddca-dots span {
+      width: 7px; height: 7px; border-radius: 50%; background: #22c55e;
+      display: inline-block; animation: ddcaBounce 1.3s infinite ease-in-out;
+    }
+    .ddca-dots span:nth-child(2) { animation-delay: 0.18s; background: #4ade80; }
+    .ddca-dots span:nth-child(3) { animation-delay: 0.36s; background: #86efac; }
+    @keyframes ddcaBounce {
+      0%, 70%, 100% { transform: translateY(0) scale(1); }
+      35% { transform: translateY(-6px) scale(1.1); }
+    }
+
+    /* ── INPUT AREA ── */
+    #ddca-chat-footer {
+      padding: 12px 14px; background: #fff;
+      border-top: 1px solid rgba(0,0,0,0.07);
+      display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;
+    }
+    .ddca-input-row { display: flex; gap: 10px; align-items: flex-end; }
+    #ddca-chat-input {
+      flex: 1; border: 1.5px solid #d1fae5; border-radius: 20px;
+      padding: 10px 16px; font-size: 13.5px; outline: none; resize: none;
+      min-height: 42px; max-height: 120px; line-height: 1.45;
+      font-family: inherit; color: #111827; background: #f9fafb;
+      transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+    }
+    #ddca-chat-input:focus {
+      border-color: #22c55e; background: #fff;
+      box-shadow: 0 0 0 3px rgba(34,197,94,0.12);
+    }
+    #ddca-chat-input::placeholder { color: #9ca3af; }
+    #ddca-char-count { font-size: 10px; color: #d1d5db; text-align: right; height: 0; overflow: hidden; transition: height 0.2s, color 0.2s; }
+    #ddca-char-count.visible { height: 14px; }
+    #ddca-char-count.warn { color: #f59e0b; }
+    #ddca-char-count.over { color: #ef4444; }
+    #ddca-chat-send {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: linear-gradient(145deg, #15803d, #22c55e);
+      border: none; cursor: pointer; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: transform 0.2s cubic-bezier(.34,1.56,.64,1), box-shadow 0.2s, opacity 0.2s;
+      box-shadow: 0 4px 14px rgba(34,197,94,0.4);
+    }
+    #ddca-chat-send:hover { transform: scale(1.12); box-shadow: 0 6px 20px rgba(34,197,94,0.55); }
+    #ddca-chat-send:active { transform: scale(0.95); }
+    #ddca-chat-send:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+    #ddca-chat-send svg { width: 19px; height: 19px; fill: #fff; }
+
+    /* ── DARK MODE OVERRIDES ── */
+    body.dark-mode #ddca-chat-window { background: #111827 !important; border-color: rgba(255,255,255,0.08) !important; }
+    body.dark-mode #ddca-chat-messages { background: #0a0f1a !important; }
+    body.dark-mode .ddca-bot .ddca-bubble { background: #1f2937 !important; color: #f3f4f6 !important; border-color: rgba(255,255,255,0.06) !important; }
+    body.dark-mode .ddca-bubble strong { color: #4ade80 !important; }
+    body.dark-mode .ddca-bubble em { color: #d1d5db !important; }
+    body.dark-mode .ddca-bubble code { background: #111827 !important; color: #4ade80 !important; border-color: #374151 !important; }
+    body.dark-mode .ddca-h2 { color: #4ade80 !important; border-color: #374151 !important; }
+    body.dark-mode .ddca-h3 { color: #86efac !important; }
+    body.dark-mode .ddca-table td { color: #d1d5db !important; border-color: #374151 !important; }
+    body.dark-mode .ddca-table tr:nth-child(even) td { background: #111827 !important; }
+    body.dark-mode #ddca-suggestions { background: linear-gradient(180deg,#111827,#0f1923) !important; border-color: rgba(255,255,255,0.06) !important; }
+    body.dark-mode .ddca-chip { background: #1f2937 !important; color: #4ade80 !important; border-color: #374151 !important; }
+    body.dark-mode .ddca-chip:hover { background: #15803d !important; color: #fff !important; border-color: #15803d !important; }
+    body.dark-mode #ddca-chat-footer { background: #111827 !important; border-color: rgba(255,255,255,0.07) !important; }
+    body.dark-mode #ddca-chat-input { background: #1f2937 !important; color: #f3f4f6 !important; border-color: #374151 !important; }
+    body.dark-mode #ddca-chat-input:focus { border-color: #22c55e !important; background: #111827 !important; }
+    body.dark-mode .ddca-copy-btn { border-color: #374151 !important; color: #6b7280 !important; }
+    body.dark-mode .ddca-copy-btn:hover { background: #1f2937 !important; color: #4ade80 !important; border-color: #4ade80 !important; }
+    body.dark-mode .ddca-fu-chip { background: #1f2937 !important; color: #4ade80 !important; border-color: #374151 !important; }
+    body.dark-mode .ddca-fu-chip:hover { background: #15803d !important; color: #fff !important; }
+    body.dark-mode #ddca-typing .ddca-bubble { background: #1f2937 !important; border-color: rgba(255,255,255,0.06) !important; }
+    body.dark-mode .ddca-typing-label { color: #9ca3af !important; }
+    body.dark-mode #ddca-scroll-btn { background: #1f2937 !important; color: #4ade80 !important; border-color: #374151 !important; }
+
+    @media (max-width: 480px) {
+      #ddca-chat-window { height: calc(100dvh - 100px); }
+    }
+
+    /* ═══════════════════ DARK MODE ═══════════════════════════════ */
+    body.dark-mode { background-color: #0d1117 !important; color: #e6edf3 !important; }
+    body.dark-mode .container { background: #161b22 !important; color: #e6edf3 !important; }
+    body.dark-mode .app-header { background: linear-gradient(135deg, #010409 0%, #0d1117 100%) !important; }
+    body.dark-mode #myTab.nav-tabs { background: #21262d !important; }
+    body.dark-mode .card { background: #21262d !important; border-color: #30363d !important; color: #e6edf3 !important; }
+    body.dark-mode .card-header.bg-primary { background: #1158c7 !important; }
+    body.dark-mode .card-header.bg-success { background: #196c2e !important; }
+    body.dark-mode .table { color: #e6edf3; }
+    body.dark-mode .table-dark { background: #21262d !important; color: #e6edf3; }
+    body.dark-mode .table-bordered td, body.dark-mode .table-bordered th { border-color: #30363d; }
+    body.dark-mode .table-hover tbody tr:hover td { background: #1c2128 !important; }
+    body.dark-mode .bg-light { background: #21262d !important; border-color: #30363d !important; }
+    body.dark-mode .card-footer { background: #21262d !important; border-color: #30363d !important; }
+    body.dark-mode .form-select, body.dark-mode .form-control, body.dark-mode .input-group-text { background: #21262d !important; color: #e6edf3 !important; border-color: #30363d !important; }
+    body.dark-mode .text-muted { color: #8b949e !important; }
+    body.dark-mode .border { border-color: #30363d !important; }
+    body.dark-mode .qualifier-row { background-color: #0f2419 !important; }
+    body.dark-mode .standing-card { background: #21262d !important; border-color: #30363d !important; }
+    body.dark-mode .standing-name { color: #e6edf3 !important; }
+    body.dark-mode .standing-pts-num { color: #58a6ff !important; }
+    body.dark-mode .match-card { background: #21262d !important; border-color: #30363d !important; }
+    body.dark-mode .mc-team { color: #e6edf3 !important; }
+    body.dark-mode .mc-top-right { background: #30363d !important; border-color: #484f58 !important; color: #8b949e !important; }
+    body.dark-mode .match-card-result { background: #30363d !important; border-color: #484f58 !important; color: #e6edf3 !important; }
+    body.dark-mode .matrix-cell { border-color: #30363d !important; }
+    body.dark-mode .team-row-header { background: #21262d !important; color: #e6edf3 !important; border-color: #30363d !important; }
+    body.dark-mode .matrix-table-container { background: #161b22; }
+    body.dark-mode .alert { background: #21262d !important; border-color: #30363d !important; color: #e6edf3 !important; }
+    body.dark-mode .text-dark { color: #e6edf3 !important; }
+    body.dark-mode .text-secondary { color: #8b949e !important; }
+    body.dark-mode #ddca-chat-window { background: #161b22 !important; }
+    body.dark-mode #ddca-chat-messages { background: #0d1117 !important; }
+    body.dark-mode .ddca-bot .ddca-bubble { background: #21262d !important; color: #e6edf3 !important; }
+    body.dark-mode #ddca-suggestions { background: #21262d !important; border-color: #30363d !important; }
+    body.dark-mode #ddca-chat-footer { background: #21262d !important; border-color: #30363d !important; }
+    body.dark-mode #ddca-chat-input { background: #30363d !important; color: #e6edf3 !important; border-color: #484f58 !important; }
+    body.dark-mode .nrr-sim-panel, body.dark-mode .poll-section { background: #161b22 !important; border-color: #30363d !important; }
+    body.dark-mode .nrr-sim-team-row { background: #21262d !important; border-color: #30363d !important; color: #e6edf3 !important; }
+    body.dark-mode .poll-btn { background: #21262d !important; border-color: #30363d !important; color: #e6edf3 !important; }
+    body.dark-mode .poll-btn:hover { border-color: #1f6feb !important; background: #1c2128 !important; }
+    body.dark-mode .qual-bar-track { background: #30363d !important; }
+    body.dark-mode .standings-search-wrap input { background: #21262d; color: #e6edf3; border-color: #30363d; }
+    body.dark-mode small, body.dark-mode .small { color: #8b949e !important; }
+    body.dark-mode .nav-link:not(.active) { color: rgba(255,255,255,0.4) !important; }
+
+    #dark-toggle {
+      margin-left: auto; background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3); color: #fff;
+      border-radius: 20px; padding: 4px 12px; font-size: 0.78rem;
+      cursor: pointer; transition: background 0.2s; white-space: nowrap; flex-shrink: 0;
+    }
+    #dark-toggle:hover { background: rgba(255,255,255,0.28); }
+
+    /* ═══════════════════ STICKY TABS ═══════════════════════════════ */
+    #myTab {
+      position: sticky; top: 0; z-index: 100;
+      margin-bottom: 14px !important;
+    }
+
+    /* ═══════════════════ SKELETON LOADING ═══════════════════════════ */
+    @keyframes shimmer {
+      0%   { background-position: -600px 0; }
+      100% { background-position:  600px 0; }
+    }
+    .skel {
+      background: linear-gradient(90deg,#e9ecef 25%,#f5f5f5 50%,#e9ecef 75%);
+      background-size: 600px 100%; animation: shimmer 1.3s infinite linear;
+      border-radius: 5px; display: inline-block;
+    }
+    body.dark-mode .skel {
+      background: linear-gradient(90deg,#21262d 25%,#30363d 50%,#21262d 75%);
+      background-size: 600px 100%;
+    }
+    .skel-card {
+      background: #fff; border-radius: 12px; padding: 11px 14px;
+      margin-bottom: 8px; border: 1px solid #e9ecef;
+      display: flex; align-items: center; gap: 12px;
+    }
+    body.dark-mode .skel-card { background: #21262d; border-color: #30363d; }
+
+    /* ═══════════════════ TEAM SEARCH ════════════════════════════════ */
+    .standings-search-wrap { position: relative; margin-bottom: 10px; }
+    .standings-search-wrap input {
+      width: 100%; padding: 7px 12px 7px 32px;
+      border: 1px solid #dee2e6; border-radius: 20px;
+      font-size: 0.85rem; outline: none; transition: border-color 0.15s; background: #fff;
+    }
+    .standings-search-wrap input:focus { border-color: #0d6efd; }
+    .standings-search-wrap .s-icon {
+      position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+      font-size: 0.85rem; pointer-events: none; opacity: 0.4;
+    }
+
+    /* ═══════════════════ QUALIFICATION BARS ═════════════════════════ */
+    .qual-bar-section { margin: 12px 0 4px; }
+    .qual-bar-section h6 { font-size: 0.75rem; font-weight: 700; color: #6c757d; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .qual-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+    .qual-bar-name { font-size: 0.75rem; font-weight: 600; min-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #212529; }
+    body.dark-mode .qual-bar-name { color: #e6edf3; }
+    .qual-bar-track { flex: 1; height: 10px; background: #e9ecef; border-radius: 5px; overflow: hidden; }
+    .qual-bar-fill { height: 100%; border-radius: 5px; transition: width 0.85s cubic-bezier(.34,1.56,.64,1); }
+    .qual-bar-pts { font-size: 0.72rem; font-weight: 700; min-width: 32px; text-align: right; color: #0d6efd; }
+    .qual-cutoff-line { font-size: 0.7rem; color: #adb5bd; margin-top: 4px; }
+
+    /* ═══════════════════ NRR SIMULATOR ══════════════════════════════ */
+    .nrr-sim-panel {
+      border: 1px solid #dee2e6; border-radius: 12px;
+      padding: 14px 16px; margin: 14px 0; background: #f8f9fa;
+    }
+    .nrr-sim-panel summary {
+      font-size: 0.82rem; font-weight: 700; color: #0d6efd;
+      cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px;
+    }
+    .nrr-sim-panel summary::-webkit-details-marker { display: none; }
+    .nrr-sim-panel summary::before { content: '▶'; font-size: 0.65rem; transition: transform 0.2s; }
+    .nrr-sim-panel[open] summary::before { transform: rotate(90deg); }
+    .nrr-sim-body { padding-top: 12px; }
+    .sim-inputs { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px; }
+    .sim-inputs label { font-size: 0.72rem; font-weight: 600; color: #6c757d; display: block; margin-bottom: 3px; }
+    .sim-inputs input, .sim-inputs select {
+      font-size: 0.82rem; padding: 5px 8px; border: 1px solid #dee2e6; border-radius: 8px;
+      background: #fff; color: #212529; width: 100%;
+    }
+    body.dark-mode .sim-inputs input, body.dark-mode .sim-inputs select { background: #21262d !important; color: #e6edf3 !important; border-color: #30363d !important; }
+    .sim-col { flex: 1; min-width: 100px; }
+    .nrr-sim-table { width: 100%; font-size: 0.78rem; border-collapse: collapse; margin-top: 4px; }
+    .nrr-sim-table td { padding: 5px 8px; border-bottom: 1px solid #e9ecef; }
+    body.dark-mode .nrr-sim-table td { border-color: #30363d; }
+    .nrr-sim-table tr:last-child td { border-bottom: none; }
+    .sim-rank-cell { font-weight: 700; width: 24px; }
+    .sim-name-cell { font-weight: 600; }
+    .sim-pts-cell { font-weight: 700; color: #0d6efd; text-align: right; }
+    .sim-nrr-cell { color: #6c757d; text-align: right; font-size: 0.72rem; }
+    .sim-moved-up   { color: #198754; font-size: 0.7rem; }
+    .sim-moved-down { color: #dc3545; font-size: 0.7rem; }
+
+    /* ═══════════════════ PREDICTION POLL ════════════════════════════ */
+    .poll-section {
+      border: 1px solid #dee2e6; border-radius: 12px;
+      padding: 14px 16px; margin-top: 14px; background: #f8f9fa;
+    }
+    .poll-section h6 { font-size: 0.82rem; font-weight: 700; color: #6c757d; margin-bottom: 3px; }
+    .poll-match-label { font-size: 0.72rem; color: #adb5bd; margin-bottom: 10px; }
+    .poll-team-select { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .poll-team-select select { font-size: 0.8rem; padding: 4px 8px; border: 1px solid #dee2e6; border-radius: 8px; flex: 1; min-width: 130px; }
+    body.dark-mode .poll-team-select select { background: #21262d !important; color: #e6edf3 !important; border-color: #30363d !important; }
+    .poll-vs { font-weight: 700; color: #6c757d; font-size: 0.8rem; padding-bottom: 4px; }
+    .poll-btns { display: flex; gap: 8px; margin-bottom: 10px; }
+    .poll-btn {
+      flex: 1; padding: 8px 6px; border: 2px solid #dee2e6;
+      border-radius: 10px; background: #fff; font-size: 0.78rem;
+      font-weight: 600; cursor: pointer; transition: all 0.2s;
+      text-align: center; word-break: break-word;
+    }
+    .poll-btn:hover { border-color: #0d6efd; background: #e9f2ff; }
+    .poll-btn.voted { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+    .poll-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+    .poll-bar-name { font-size: 0.72rem; font-weight: 600; min-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .poll-bar-outer { flex: 1; height: 8px; background: #e9ecef; border-radius: 4px; overflow: hidden; }
+    .poll-bar-inner { height: 100%; background: #0d6efd; border-radius: 4px; transition: width 0.55s ease; }
+    .poll-bar-pct { font-size: 0.7rem; font-weight: 700; min-width: 36px; text-align: right; }
+    body.dark-mode .poll-bar-outer { background: #30363d; }
+    .poll-votes-note { font-size: 0.68rem; color: #adb5bd; margin-top: 6px; text-align: right; }
+  </style>
+</head>
+<body class="p-2 p-md-4">
+
+<div class="container bg-white shadow rounded p-3 p-md-4" style="max-width: 1200px;">
+
+  <div class="app-header">
+    <div class="app-header-emoji">🏏</div>
+    <div>
+      <div class="app-header-title">DDCA League</div>
+      <div class="app-header-sub">Points Table Viewer · 2025</div>
+    </div>
+    <button id="dark-toggle" onclick="ddcaToggleDark()" title="Toggle dark mode">🌙 Dark</button>
+  </div>
+
+  <ul class="nav nav-tabs mb-3" id="myTab" role="tablist">
+    <li class="nav-item"><button class="nav-link active" id="view-tab" data-bs-toggle="tab" data-bs-target="#view">📊 Points Table</button></li>
+    <li class="nav-item"><button class="nav-link" id="matrix-tab" data-bs-toggle="tab" data-bs-target="#matrix">🕸️ Matrix View</button></li>
+    <li class="nav-item"><button class="nav-link" id="results-tab" data-bs-toggle="tab" data-bs-target="#results">📋 Results</button></li>
+
+    <? if (isAdmin) { ?>
+      <li class="nav-item"><button class="nav-link" id="sync-tab" data-bs-toggle="tab" data-bs-target="#sync">🔄 Sync Queue</button></li>
+      <li class="nav-item"><button class="nav-link" id="admin-tab" data-bs-toggle="tab" data-bs-target="#admin">🔒 Admin Entry</button></li>
+    <? } ?>
+  </ul>
+
+  <div class="tab-content" id="myTabContent">
+
+    <!-- ===================== POINTS TABLE ===================== -->
+    <div class="tab-pane fade show active" id="view">
+      <div class="row g-3 align-items-center mb-3">
+        <div class="col-auto"><label class="col-form-label fw-bold">Select Pool:</label></div>
+        <div class="col-md-6">
+          <select class="form-select pool-selector" id="viewPoolSelect">
+            <option value="">Loading pools...</option>
+          </select>
+        </div>
+        <div class="col-auto loader" id="viewLoader">
+          <div class="spinner-border spinner-border-sm text-primary"></div>
+        </div>
+      </div>
+
+      <!-- Team Search -->
+      <div class="standings-search-wrap">
+        <span class="s-icon">🔍</span>
+        <input type="text" id="standingsSearch" placeholder="Search team…" oninput="ddcaFilterStandings(this.value)" autocomplete="off">
+      </div>
+
+      <!-- Skeleton shown while loading -->
+      <div id="standingsSkeleton" class="d-sm-none" style="display:none!important;">
+        <div class="skel-card"><div class="skel" style="width:30px;height:30px;border-radius:50%;"></div><div style="flex:1"><div class="skel" style="width:60%;height:13px;margin-bottom:6px;"></div><div class="skel" style="width:40%;height:10px;"></div></div><div class="skel" style="width:34px;height:34px;border-radius:6px;"></div></div>
+        <div class="skel-card"><div class="skel" style="width:30px;height:30px;border-radius:50%;"></div><div style="flex:1"><div class="skel" style="width:55%;height:13px;margin-bottom:6px;"></div><div class="skel" style="width:35%;height:10px;"></div></div><div class="skel" style="width:34px;height:34px;border-radius:6px;"></div></div>
+        <div class="skel-card"><div class="skel" style="width:30px;height:30px;border-radius:50%;"></div><div style="flex:1"><div class="skel" style="width:70%;height:13px;margin-bottom:6px;"></div><div class="skel" style="width:45%;height:10px;"></div></div><div class="skel" style="width:34px;height:34px;border-radius:6px;"></div></div>
+      </div>
+
+      <div id="standingsCards" class="d-sm-none"></div>
+      <div class="table-responsive d-none d-sm-block">
+        <table class="table table-hover table-bordered text-center table-sm align-middle">
+          <thead class="table-dark">
+            <tr>
+              <th>Team</th><th>P</th><th>W</th><th>L</th><th>Pts</th>
+              <th class="d-none d-sm-table-cell" title="Standard NRR">NRR (ICC)</th>
+              <th title="Local: Runs / (Overs * Wkts)">NRR (DDCA)</th>
+            </tr>
+          </thead>
+          <tbody id="standingsBody">
+            <tr><td colspan="7"><div class="skel" style="width:80%;height:12px;margin:8px auto;"></div></td></tr>
+            <tr><td colspan="7"><div class="skel" style="width:65%;height:12px;margin:8px auto;"></div></td></tr>
+            <tr><td colspan="7"><div class="skel" style="width:72%;height:12px;margin:8px auto;"></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="small text-muted mt-2 d-flex align-items-center flex-wrap gap-2">
+        <span style="display:inline-block;width:10px;height:10px;background:#198754;border-radius:2px;"></span> Top 2 Qualify
+        <span>· Order: Wins &rarr; Points &rarr; NRR (DDCA)</span>
+      </div>
+
+      <!-- Qualification Progress Bars -->
+      <div class="qual-bar-section" id="qualBarsSection" style="display:none;">
+        <h6>🏆 Qualification Race</h6>
+        <div id="qualBarsBody"></div>
+      </div>
+
+      <!-- NRR What-If Simulator -->
+      <details class="nrr-sim-panel" id="nrrSimPanel" style="display:none;">
+        <summary>🧮 NRR What-If Simulator — add a hypothetical match result</summary>
+        <div class="nrr-sim-body">
+          <div class="sim-inputs">
+            <div class="sim-col" style="min-width:140px;">
+              <label>Batting 1st</label>
+              <select id="simTeam1"><option value="">-- Team --</option></select>
+            </div>
+            <div class="sim-col" style="min-width:80px;">
+              <label>Runs</label><input type="number" id="simR1" placeholder="e.g. 180" min="0">
+            </div>
+            <div class="sim-col" style="min-width:70px;">
+              <label>Overs</label><input type="number" id="simOv1" placeholder="e.g. 40" step="0.1" min="0.1">
+            </div>
+            <div class="sim-col" style="min-width:65px;">
+              <label>Wkts</label><input type="number" id="simW1" placeholder="e.g. 6" min="0" max="10">
+            </div>
+          </div>
+          <div class="sim-inputs">
+            <div class="sim-col" style="min-width:140px;">
+              <label>Batting 2nd</label>
+              <select id="simTeam2"><option value="">-- Team --</option></select>
+            </div>
+            <div class="sim-col" style="min-width:80px;">
+              <label>Runs</label><input type="number" id="simR2" placeholder="e.g. 150" min="0">
+            </div>
+            <div class="sim-col" style="min-width:70px;">
+              <label>Overs</label><input type="number" id="simOv2" placeholder="e.g. 38" step="0.1" min="0.1">
+            </div>
+            <div class="sim-col" style="min-width:65px;">
+              <label>Wkts</label><input type="number" id="simW2" placeholder="e.g. 10" min="0" max="10">
+            </div>
+            <div class="sim-col" style="min-width:70px;">
+              <label>Match Overs</label><input type="number" id="simTov" value="50" min="1" max="50">
+            </div>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="runNrrSim()">▶ Simulate</button>
+          <button class="btn btn-sm btn-outline-secondary ms-2" onclick="resetNrrSim()">Reset</button>
+          <div id="nrrSimResult" class="nrr-sim-result" style="display:none;">
+            <div class="small text-muted mb-6px">Projected standings after this match:</div>
+            <table class="nrr-sim-table"><tbody id="nrrSimBody"></tbody></table>
+          </div>
+        </div>
+      </details>
+
+      <!-- Match Prediction Poll -->
+      <div class="poll-section" id="pollSection" style="display:none;">
+        <h6>🗳️ Match Prediction Poll</h6>
+        <div class="poll-match-label">Who do you think will win the next match?</div>
+        <div class="poll-team-select">
+          <select id="pollTeam1" onchange="ddcaUpdatePollBtns()"><option value="">Pick Team 1</option></select>
+          <span class="poll-vs">vs</span>
+          <select id="pollTeam2" onchange="ddcaUpdatePollBtns()"><option value="">Pick Team 2</option></select>
+        </div>
+        <div class="poll-btns" id="pollBtns" style="display:none;">
+          <button class="poll-btn" id="pollBtn1" onclick="ddcaCastVote(0)"></button>
+          <button class="poll-btn" id="pollBtn2" onclick="ddcaCastVote(1)"></button>
+        </div>
+        <div id="pollBars" style="display:none;">
+          <div class="poll-bar-row">
+            <span class="poll-bar-name" id="pollBarName1"></span>
+            <div class="poll-bar-outer"><div class="poll-bar-inner" id="pollBar1" style="width:0%"></div></div>
+            <span class="poll-bar-pct" id="pollPct1">0%</span>
+          </div>
+          <div class="poll-bar-row">
+            <span class="poll-bar-name" id="pollBarName2"></span>
+            <div class="poll-bar-outer"><div class="poll-bar-inner" id="pollBar2" style="width:0%"></div></div>
+            <span class="poll-bar-pct" id="pollPct2">0%</span>
+          </div>
+          <div class="poll-votes-note" id="pollVotesNote"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== MATRIX ===================== -->
+    <div class="tab-pane fade" id="matrix">
+      <div class="row g-3 align-items-center mb-3">
+        <div class="col-auto"><label class="col-form-label fw-bold">Select Pool:</label></div>
+        <div class="col-md-6">
+          <select class="form-select pool-selector" id="matrixPoolSelect">
+            <option value="">Loading pools...</option>
+          </select>
+        </div>
+        <div class="col-auto loader" id="matrixLoader">
+          <div class="spinner-border spinner-border-sm text-primary"></div>
+        </div>
+      </div>
+      <div class="matrix-table-container">
+        <table class="matrix-table text-center" id="matrixTable">
+          <thead><tr><th class="team-row-header bg-white"></th></tr></thead>
+          <tbody id="matrixBody"><tr><td class="text-muted p-3">Loading data...</td></tr></tbody>
+        </table>
+      </div>
+      <div id="matrixKey"></div>
+      <div class="small text-muted mt-3 p-2 bg-light rounded border d-flex justify-content-around flex-wrap">
+        <span class="badge bg-win-bonus border mb-1">Win (Bonus)</span>
+        <span class="badge bg-win text-dark border mb-1">Win</span>
+        <span class="badge bg-tie text-dark border mb-1">Tie/NR</span>
+        <span class="badge bg-loss text-dark border mb-1">Loss</span>
+        <span class="badge bg-loss-bonus border mb-1">Loss (Bonus)</span>
+      </div>
+    </div>
+
+    <!-- ===================== RESULTS ===================== -->
+    <div class="tab-pane fade" id="results">
+      <div class="row g-2 align-items-center mb-3 flex-wrap">
+        <div class="col-auto"><label class="col-form-label fw-bold">Pool:</label></div>
+        <div class="col-md-4 col-sm-6">
+          <select class="form-select pool-selector" id="resultsPoolSelect">
+            <option value="">Loading pools...</option>
+          </select>
+        </div>
+        <div class="col-auto"><label class="col-form-label fw-bold">Team:</label></div>
+        <div class="col-md-4 col-sm-6">
+          <select class="form-select" id="resultsTeamSelect">
+            <option value="">All Teams</option>
+          </select>
+        </div>
+        <div class="col-auto loader" id="resultsLoader">
+          <div class="spinner-border spinner-border-sm text-primary"></div>
+        </div>
+      </div>
+      <div id="resultCards" class="d-sm-none"></div>
+      <div class="table-responsive d-none d-sm-block">
+        <table class="table table-hover bg-white text-center align-middle border" id="resultsTable" style="border-collapse: separate; border-spacing: 0;">
+          <thead class="table-dark">
+            <tr>
+              <th style="width: 12%;">Date</th>
+              <th class="text-end" style="width: 25%;">Batting 1st</th>
+              <th style="width: 4%;"></th>
+              <th class="text-start" style="width: 25%;">Batting 2nd</th>
+              <th style="width: 20%;">Result</th>
+              <th class="d-none d-md-table-cell" style="width: 14%;">Ground / Toss</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody">
+            <tr><td colspan="6" class="text-muted py-4">Select a pool to view results.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="resultsCount" class="small text-muted mt-1"></div>
+    </div>
+
+    <? if (isAdmin) { ?>
+      <!-- ===================== SYNC QUEUE ===================== -->
+      <div class="tab-pane fade" id="sync">
+
+        <div id="syncLoginSection" class="text-center py-5">
+          <h5>🔒 Admin Access Required</h5>
+          <p class="text-muted small">Enter your PIN to fetch and review matches from TNCA.</p>
+          <div class="d-inline-block mt-2 text-start">
+            <div class="input-group">
+              <input type="password" id="syncPinInput" class="form-control" placeholder="Enter PIN" >
+              <button class="btn btn-primary" onclick="syncAttemptLogin()">Unlock</button>
+            </div>
+            <div id="syncLoginError" class="text-danger small mt-1" style="display:none;">Incorrect PIN. Try again.</div>
+          </div>
+        </div>
+
+        <div id="syncContent" style="display:none;">
+          <div class="d-flex flex-wrap align-items-center gap-3 mb-4 p-3 bg-light rounded border">
+            <button class="btn btn-primary" onclick="fetchSyncQueue()" id="syncFetchBtn">
+              🔄 Fetch New Matches
+            </button>
+            <div class="spinner-border spinner-border-sm text-primary" id="syncLoader" style="display:none;"></div>
+            <span id="syncStatusText" class="text-muted small">Click to load pending matches from TNCA.</span>
+            <div class="ms-auto">
+              <span id="syncQueueBadge" class="badge bg-secondary fs-6 queue-count-badge" style="display:none;"></span>
+            </div>
+          </div>
+
+          <div class="alert alert-success alert-dismissible fade show small" role="alert">
+            <strong>✅ Auto-configured:</strong> Pool assignment is resolved automatically from your Teams sheet — no manual setup needed. If a pool can't be determined (e.g. a team isn't in your sheet yet), you'll see a yellow border and must select it manually.
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+
+          <div id="syncQueueList"></div>
+        </div>
+      </div>
+
+      <!-- ===================== ADMIN ENTRY ===================== -->
+      <div class="tab-pane fade" id="admin">
+        <div id="adminLogin" class="text-center py-5">
+          <h4>Admin Access Required</h4>
+          <div class="d-inline-block mt-3 text-start">
+            <label class="form-label">Enter 6-Digit Admin PIN</label>
+            <div class="input-group">
+              <input type="password" id="loginPin" class="form-control" placeholder="Enter PIN" >
+              <button class="btn btn-primary" onclick="attemptLogin()">Unlock</button>
+            </div>
+            <div id="loginError" class="text-danger small mt-2" style="display:none;">Incorrect PIN</div>
+          </div>
+        </div>
+        <form id="scoreForm" style="display:none;">
+          <input type="hidden" name="pin" id="hiddenPin">
+
+          <div class="row mb-3 g-2 bg-light p-2 rounded border">
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Match Date*</label>
+              <input type="date" class="form-control" name="date" id="adminMatchDate" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Total Match Overs*</label>
+              <input type="number" class="form-control" name="matchOvers" value="50" required>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-bold">Ground / Venue*</label>
+              <select class="form-select" name="ground" id="groundSelect" required>
+                <option value="">Loading Grounds...</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold">Pool*</label>
+            <select class="form-select pool-selector" name="pool" id="adminPoolSelect" required>
+              <option value="">Loading...</option>
+            </select>
+          </div>
+
+          <div class="card mb-3">
+            <div class="card-body py-3">
+              <div class="row align-items-center">
+                <div class="col-5">
+                  <select class="form-select team-selector" name="teamA" id="teamA" required disabled></select>
+                </div>
+                <div class="col-2 text-center fw-bold">VS</div>
+                <div class="col-5">
+                  <select class="form-select team-selector" name="teamB" id="teamB" required disabled></select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card mb-3 border-info">
+            <div class="card-body py-2">
+              <div class="row align-items-center">
+                <div class="col-md-2 fw-bold text-info-emphasis">Toss:*</div>
+                <div class="col-md-5">
+                  <select class="form-select form-select-sm" name="tossWinner" id="tossWinner" required disabled>
+                    <option value="">Winner?</option>
+                  </select>
+                </div>
+                <div class="col-md-5">
+                  <select class="form-select form-select-sm" name="tossChoice" id="tossChoice" required disabled>
+                    <option value="">Choice?</option>
+                    <option value="Bat">Bat</option>
+                    <option value="Bowl">Bowl</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="card border-primary h-100">
+                <div class="card-header bg-primary text-white py-1">Batting 1st</div>
+                <div class="card-body">
+                  <input type="text" class="form-control mb-2 fw-bold" name="batFirst" id="batFirst" readonly placeholder="Waiting for Toss...">
+                  <div class="input-group input-group-sm mb-2">
+                    <span class="input-group-text">Runs</span>
+                    <input type="number" class="form-control" name="score1" required>
+                  </div>
+                  <div class="row g-2">
+                    <div class="col-6 input-group input-group-sm">
+                      <span class="input-group-text">Ov</span>
+                      <input type="number" class="form-control" name="overs1" step="0.1" required>
+                    </div>
+                    <div class="col-6 input-group input-group-sm">
+                      <span class="input-group-text">Wk</span>
+                      <input type="number" class="form-control" name="wkts1" max="10" required>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card border-success h-100">
+                <div class="card-header bg-success text-white py-1">Batting 2nd</div>
+                <div class="card-body">
+                  <input type="text" class="form-control mb-2 fw-bold" name="batSecond" id="batSecond" readonly placeholder="Waiting for Toss...">
+                  <div class="input-group input-group-sm mb-2">
+                    <span class="input-group-text">Runs</span>
+                    <input type="number" class="form-control" name="score2" required>
+                  </div>
+                  <div class="row g-2">
+                    <div class="col-6 input-group input-group-sm">
+                      <span class="input-group-text">Ov</span>
+                      <input type="number" class="form-control" name="overs2" step="0.1" required>
+                    </div>
+                    <div class="col-6 input-group input-group-sm">
+                      <span class="input-group-text">Wk</span>
+                      <input type="number" class="form-control" name="wkts2" max="10" required>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 d-grid">
+            <button type="submit" class="btn btn-dark">Submit Match Result</button>
+          </div>
+        </form>
+      </div>
+    <? } ?>
+  </div>
+
+</div>
+
+<div class="text-center mt-4 mb-3 text-muted" style="font-size: 0.85rem;">
+  <hr style="width: 250px; margin: 0 auto 10px auto; opacity: 0.15;">
+  <div>Developed and maintained by <strong>Arunnishanth (Nike CC)</strong></div>
+  <div class="mt-1">
+    <a href="https://docs.google.com/forms/d/e/1FAIpQLSelDeROfUMt12x99qN8F3W0hyLFgZhpQYs14MQgZNHrONVQrQ/viewform?usp=header" target="_blank" class="text-decoration-none text-primary">
+      📝 Submit Feedback or Score Correction
+    </a>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+
+  // ─────────────────────────────────────────────────────────────
+  //  SHARED STATE
+  // ─────────────────────────────────────────────────────────────
+  let _adminPin       = '';
+  let _syncQueue      = [];
+  let _syncPools      = [];
+  let _syncGrounds    = [];
+  let _syncTeamCache  = {};
+  let _pendingTeamFilter = '';
+
+  const SYNC_DIVISION_LABELS = {
+    156: '1st Division',
+    157: '2nd Division',
+    158: '3rd Division',
+    159: '4th Division'
+  };
+
+  // ─────────────────────────────────────────────────────────────
+  //  INIT
+  // ─────────────────────────────────────────────────────────────
+  window.onload = function() {
+    loadPools();
+    if (document.getElementById('groundSelect')) loadGrounds();
+    attachEventListeners();
+  };
+
+  const syncTabEl = document.getElementById('sync-tab');
+  if (syncTabEl) {
+    syncTabEl.addEventListener('shown.bs.tab', function() {
+      _syncPools   = Array.from(document.getElementById('viewPoolSelect').options)
+                          .map(o => o.value).filter(v => v);
+      _syncGrounds = Array.from(document.getElementById('groundSelect').options)
+                          .map(o => o.value).filter(v => v);
+      if (_adminPin) {
+        document.getElementById('syncLoginSection').style.display = 'none';
+        document.getElementById('syncContent').style.display     = 'block';
+      }
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  POOL / GROUND LOADING
+  // ─────────────────────────────────────────────────────────────
+  function loadPools() {
+    google.script.run.withSuccessHandler(populatePools)
+      .withFailureHandler(err => console.error(err))
+      .getPools();
+  }
+
+  function populatePools(pools) {
+    if (!pools || pools.length === 0) return;
+    const options = pools.map(p => `<option value="${p}">${p}</option>`).join('');
+    document.querySelectorAll('.pool-selector').forEach(el => el.innerHTML = options);
+    document.querySelectorAll('.pool-selector').forEach(el => el.value = pools[0]);
+
+    // Only trigger the active (Points Table) tab on load — matrix/results load lazily
+    document.getElementById('viewPoolSelect').dispatchEvent(new Event('change'));
+  }
+
+  function loadGrounds() {
+    google.script.run.withSuccessHandler(grounds => {
+      const sel = document.getElementById('groundSelect');
+      if (!sel) return;
+      if (!grounds || grounds.length === 0) {
+        sel.innerHTML = '<option value="">No grounds found</option>';
+        return;
+      }
+      sel.innerHTML = '<option value="">Select Ground...</option>' +
+        grounds.map(g => `<option value="${g}">${g}</option>`).join('');
+    }).getGrounds();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  RENDER — POINTS TABLE
+  // ─────────────────────────────────────────────────────────────
+  let _standingsData = [];
+  let _matrixData    = null;
+
+  function renderStandings(data) {
+    _standingsData = data;
+    const tbody = document.getElementById('standingsBody');
+    if (data.length === 0) { tbody.innerHTML = '<tr><td colspan="7">No matches.</td></tr>'; return; }
+    tbody.innerHTML = data.map((t, i) => `
+      <tr class="${i < 2 ? 'qualifier-row' : ''}">
+        <td class="fw-bold text-start">${escHtml(t.name)}</td>
+        <td>${t.p}</td><td>${t.w}</td><td>${t.l}</td>
+        <td class="fw-bold">${t.pts}</td>
+        <td class="small text-secondary d-none d-sm-table-cell">
+          ${t.nrrICC}
+          <span class="nrr-info-icon text-primary" data-team="${escAttr(t.name)}" data-type="icc">ⓘ</span>
+        </td>
+        <td class="small text-primary fw-bold">
+          ${t.nrrDDCA.toFixed(4)}
+          <span class="nrr-info-icon text-secondary" data-team="${escAttr(t.name)}" data-type="ddca">ⓘ</span>
+        </td>
+      </tr>`).join('');
+    initNrrPopovers();
+
+    const cardsEl = document.getElementById('standingsCards');
+    if (cardsEl) {
+      cardsEl.innerHTML = data.length === 0
+        ? '<p class="text-muted text-center py-3">No data yet.</p>'
+        : data.map((t, i) => {
+            const isQ     = i < 2;
+            const rankCls = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : '';
+            const nrrSign = t.nrrDDCA >= 0 ? '+' : '';
+            return `<div class="standing-card ${isQ ? 'qualifier' : ''} ${rankCls}">
+              <div class="rank-badge">${i + 1}</div>
+              <div class="standing-info">
+                <div class="standing-name">${escHtml(t.name.trim())}${isQ ? '<span class="qual-chip">Q</span>' : ''}</div>
+                <div class="standing-meta">P ${t.p} &nbsp;·&nbsp; W ${t.w} &nbsp;·&nbsp; L ${t.l}</div>
+                <div class="standing-nrr">NRR ${nrrSign}${t.nrrDDCA.toFixed(3)}</div>
+              </div>
+              <div class="standing-pts-col">
+                <div class="standing-pts-num">${t.pts}</div>
+                <div class="standing-pts-label">pts</div>
+              </div>
+            </div>`;
+          }).join('');
+    }
+  }
+
+  function escAttr(s) {
+    return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function escHtml(s) {
+    return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function buildICCBreakdown(t) {
+    const ms   = t.matches || [];
+    const sign = parseFloat(t.nrrICC) >= 0 ? '+' : '';
+    const rF = t.runsFor || 0, oF = t.ovFor || 0;
+    const rA = t.runsAg  || 0, oA = t.ovAg  || 0;
+    const rpoF = oF > 0 ? (rF / oF).toFixed(3) : '—';
+    const rpoA = oA > 0 ? (rA / oA).toFixed(3) : '—';
+
+    const rfParts  = ms.length ? ms.map(m => m.myR).join(' + ')                        : rF;
+    const raParts  = ms.length ? ms.map(m => m.opR).join(' + ')                        : rA;
+    const ofParts  = ms.length ? ms.map(m => parseFloat(m.myOv).toFixed(1)).join(' + '): oF.toFixed(1);
+    const oaParts  = ms.length ? ms.map(m => parseFloat(m.opOv).toFixed(1)).join(' + '): oA.toFixed(1);
+
+    const matchRows = ms.map((m, i) => `
+      <tr${i > 0 ? ' class="border-top"' : ''}>
+        <td class="text-muted" style="font-size:0.72rem;">vs ${escHtml(m.opp)}${m.date ? ' (' + m.date + ')' : ''}</td>
+        <td class="text-end text-success">${m.myR}/${parseFloat(m.myOv).toFixed(1)}</td>
+        <td class="text-center text-muted px-0">|</td>
+        <td class="text-end text-danger">${m.opR}/${parseFloat(m.opOv).toFixed(1)}</td>
+      </tr>`).join('');
+
+    return `<div class="nrr-popover-content" style="min-width:270px;">
+      <div class="fw-bold mb-2">ICC NRR = ${sign}${t.nrrICC}</div>
+      ${ms.length ? `<table class="table table-sm table-borderless mb-1" style="font-size:0.78rem;">
+        <tr><th></th><th class="text-end text-success">Scored</th><th></th><th class="text-end text-danger">Conceded</th></tr>
+        ${matchRows}
+      </table>` : ''}
+      <div class="formula-line" style="font-size:0.72rem;">
+        <div>For: (${rfParts}) ÷ (${ofParts}) = <strong>${rpoF}</strong></div>
+        <div>Ag:&nbsp; (${raParts}) ÷ (${oaParts}) = <strong>${rpoA}</strong></div>
+        <div class="fw-bold mt-1">${rpoF} − ${rpoA} = ${sign}${t.nrrICC}</div>
+      </div>
+    </div>`;
+  }
+
+  function buildDDCABreakdown(t) {
+    const ms   = t.matches || [];
+    const sign = t.nrrDDCA >= 0 ? '+' : '';
+    const rF=t.runsFor||0, oF=t.ovFor||0, wF=t.wkFor||0;
+    const rA=t.runsAg||0,  oA=t.ovAg||0,  wA=t.wkAg||0;
+    const swF=wF||1, swA=wA||1;
+    const rF_ = (oF*swF)>0 ? (rF/(oF*swF)).toFixed(4) : '—';
+    const rA_ = (oA*swA)>0 ? (rA/(oA*swA)).toFixed(4) : '—';
+
+    const rfParts  = ms.length ? ms.map(m => m.myR).join(' + ')                        : rF;
+    const raParts  = ms.length ? ms.map(m => m.opR).join(' + ')                        : rA;
+    const wfParts  = ms.length ? ms.map(m => m.myW).join(' + ')                        : wF;
+    const waParts  = ms.length ? ms.map(m => m.opW).join(' + ')                        : wA;
+    const ofParts  = ms.length ? ms.map(m => parseFloat(m.myOv).toFixed(1)).join(' + '): oF.toFixed(1);
+    const oaParts  = ms.length ? ms.map(m => parseFloat(m.opOv).toFixed(1)).join(' + '): oA.toFixed(1);
+
+    const matchRows = ms.map((m, i) => {
+      const sw = m.myW || 1, sa = m.opW || 1;
+      const mr = (m.myOv*sw) > 0 ? (m.myR/(m.myOv*sw)).toFixed(4) : '—';
+      const ar = (m.opOv*sa) > 0 ? (m.opR/(m.opOv*sa)).toFixed(4) : '—';
+      return `<tr${i > 0 ? ' class="border-top"' : ''}>
+        <td class="text-muted" style="font-size:0.72rem;">vs ${escHtml(m.opp)}${m.date ? ' (' + m.date + ')' : ''}</td>
+        <td class="text-end text-success">${mr}</td>
+        <td class="text-center text-muted px-0">|</td>
+        <td class="text-end text-danger">${ar}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="nrr-popover-content" style="min-width:285px;">
+      <div class="fw-bold mb-1">DDCA NRR = ${sign}${t.nrrDDCA.toFixed(4)}</div>
+      <div class="text-muted mb-1" style="font-size:0.72rem;">Formula: R ÷ (Wk × Ov)</div>
+      ${ms.length ? `<table class="table table-sm table-borderless mb-1" style="font-size:0.78rem;">
+        <tr><th></th><th class="text-end text-success">Rate For</th><th></th><th class="text-end text-danger">Rate Ag</th></tr>
+        ${matchRows}
+      </table>` : ''}
+      <div class="formula-line" style="font-size:0.72rem;">
+        <div>For: (${rfParts}) ÷ ((${wfParts}) × (${ofParts})) = <strong>${rF_}</strong></div>
+        <div>Ag:&nbsp; (${raParts}) ÷ ((${waParts}) × (${oaParts})) = <strong>${rA_}</strong></div>
+        <div class="fw-bold mt-1">${rF_} − ${rA_} = ${sign}${t.nrrDDCA.toFixed(4)}</div>
+      </div>
+    </div>`;
+  }
+
+  function initNrrPopovers() {
+    document.querySelectorAll('.nrr-info-icon').forEach(el => {
+      const t = _standingsData.find(d => d.name === el.dataset.team);
+      if (!t) return;
+      const existing = bootstrap.Popover.getInstance(el);
+      if (existing) existing.dispose();
+      new bootstrap.Popover(el, {
+        trigger:   'hover focus',
+        placement: 'left',
+        html:      true,
+        content:   el.dataset.type === 'icc' ? buildICCBreakdown(t) : buildDDCABreakdown(t),
+        container: 'body'
+      });
+    });
+  }
+
+  function buildMatrixPopover(rowTeam, colTeam, cell) {
+    const bat1Score = `${cell.s1}/${cell.w1} (${parseFloat(cell.ov1).toFixed(1)}ov)`;
+    const bat2Score = `${cell.s2}/${cell.w2} (${parseFloat(cell.ov2).toFixed(1)}ov)`;
+
+    const runsThreshold     = Math.ceil(cell.s1 * 0.8);
+    const bat1BonusAchieved = cell.s1 > cell.s2 && (cell.s1 - cell.s2) / cell.s1 > 0.20;
+
+    const matchTotalOvers = cell.totalOvers || 50;
+    const maxBalls = Math.floor(matchTotalOvers * 6 * 0.8);
+    const thrOvers = Math.floor(maxBalls / 6);
+    const thrBalls = maxBalls % 6;
+    const ovsThresholdDisplay = thrBalls === 0 ? thrOvers : `${thrOvers}.${thrBalls}`;
+
+    const ov2Parts = parseFloat(cell.ov2).toFixed(1).split('.');
+    const usedBalls = parseInt(ov2Parts[0]) * 6 + (parseInt(ov2Parts[1]) || 0);
+    const bat2BonusAchieved = cell.s2 > cell.s1 && usedBalls <= maxBalls;
+
+    const c1 = bat1BonusAchieved ? 'text-success fw-bold' : 'text-muted';
+    const c2 = bat2BonusAchieved ? 'text-success fw-bold' : 'text-muted';
+    const i1 = bat1BonusAchieved ? '✅' : '○';
+    const i2 = bat2BonusAchieved ? '✅' : '○';
+
+    const tbStr = cell.tieBreaker ? `<div class="text-danger fw-bold mb-2" style="font-size:0.75rem;">🎯 Tie-breaker: ${escHtml(cell.tieBreaker)}</div>` : '';
+
+    const currentPool = document.getElementById('matrixPoolSelect').value;
+    const viewLink = currentPool
+      ? `<div class="mt-2 pt-1 border-top text-end">
+           <a href="#" onclick="goToResults(${JSON.stringify(currentPool)}, ${JSON.stringify(rowTeam)}); return false;" class="small text-primary text-decoration-none">View in Results →</a>
+         </div>`
+      : '';
+
+    return `<div style="font-size:0.82rem;min-width:220px;">
+      <div><strong>${escHtml(cell.bat1)}:</strong> ${bat1Score}</div>
+      <div class="mb-2"><strong>${escHtml(cell.bat2)}:</strong> ${bat2Score}</div>
+      ${tbStr}
+      <div class="${c1}" style="font-size:0.75rem;">${i1} Defending bonus: restrict to &lt;${runsThreshold} runs</div>
+      <div class="${c2}" style="font-size:0.75rem;">${i2} Chasing bonus: chase in ≤${ovsThresholdDisplay} overs</div>
+      ${viewLink}
+    </div>`;
+  }
+
+  function initMatrixPopovers() {
+    document.querySelectorAll('#matrixBody td[data-mat-row]').forEach(el => {
+      const rowTeam = el.dataset.matRow;
+      const colTeam = el.dataset.matCol;
+      if (!_matrixData || !_matrixData.matrix) return;
+      const cell = _matrixData.matrix[rowTeam] && _matrixData.matrix[rowTeam][colTeam];
+      if (!cell || typeof cell !== 'object') return;
+      const existing = bootstrap.Popover.getInstance(el);
+      if (existing) existing.dispose();
+      new bootstrap.Popover(el, {
+        trigger:   'hover focus',
+        placement: 'top',
+        html:      true,
+        content:   buildMatrixPopover(rowTeam, colTeam, cell),
+        container: 'body'
+      });
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  NAVIGATE FROM MATRIX POPOVER → RESULTS TAB
+  // ─────────────────────────────────────────────────────────────
+  function goToResults(pool, team) {
+    _pendingTeamFilter = team || '';
+    bootstrap.Tab.getOrCreateInstance(document.getElementById('results-tab')).show();
+    const poolSel = document.getElementById('resultsPoolSelect');
+    if (poolSel.value === pool && _resultsPool === pool && _resultsData.length > 0) {
+      applyPendingFilter();
+    } else {
+      poolSel.value = pool;
+      loadResults(pool);
+    }
+  }
+
+  function applyPendingFilter() {
+    if (!_pendingTeamFilter || _resultsData.length === 0) return;
+    const sel = document.getElementById('resultsTeamSelect');
+    sel.value = _pendingTeamFilter;
+    renderResults(_resultsData, _pendingTeamFilter);
+    _pendingTeamFilter = '';
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  RENDER — MATRIX
+  // ─────────────────────────────────────────────────────────────
+  function renderMatrix(data) {
+    _matrixData = data;
+    const { table, matrix, sortedTeams } = data;
+    const thead = document.querySelector('#matrixTable thead tr');
+    const tbody = document.getElementById('matrixBody');
+
+    let headerHTML = '<th class="team-row-header bg-white"></th>';
+    sortedTeams.forEach((t, i) => {
+      headerHTML += `<th class="matrix-header-cell">` +
+        `<div class="vertical-text d-none d-sm-block">${escHtml(t)}</div>` +
+        `<div class="matrix-col-num d-flex d-sm-none">${i + 1}</div>` +
+        `</th>`;
+    });
+    headerHTML += '<th class="summary-col summary-divider">W</th><th class="summary-col">Pts</th><th class="summary-col">NRR</th>';
+    thead.innerHTML = headerHTML;
+
+    const keyEl = document.getElementById('matrixKey');
+    if (keyEl) {
+      keyEl.innerHTML = `<div class="matrix-team-key d-sm-none">` +
+        `<div class="fw-semibold small text-muted mb-1">Team Key</div>` +
+        sortedTeams.map((t, i) =>
+          `<div class="key-row"><span class="matrix-key-badge">${i + 1}</span><span>${escHtml(t.trim())}</span></div>`
+        ).join('') +
+        `</div>`;
+    }
+
+    tbody.innerHTML = table.map(rowTeam => {
+      const name = rowTeam.name;
+      let cells = `<td class="team-row-header text-truncate" title="${escAttr(name)}">${escHtml(name)}</td>`;
+      sortedTeams.forEach(colTeam => {
+        if (name === colTeam) {
+          cells += '<td class="matrix-cell self-match"></td>';
+        } else {
+          const cell = (matrix[name] && matrix[name][colTeam] !== undefined) ? matrix[name][colTeam] : null;
+          let cls = 'matrix-cell', display = '-';
+          if (cell !== null) {
+            const pts = typeof cell === 'object' ? cell.pts : cell;
+            display = pts;
+            if (pts >= 5)       cls += ' bg-win-bonus';
+            else if (pts === 4)  cls += ' bg-win';
+            else if (pts === 2 || pts === 1) cls += ' bg-tie';
+            else if (pts === 0)  cls += ' bg-loss';
+            else if (pts < 0)    cls += ' bg-loss-bonus';
+          }
+          const hasDetail = cell !== null && typeof cell === 'object';
+          const dataAttrs = hasDetail ? ` data-mat-row="${escAttr(name)}" data-mat-col="${escAttr(colTeam)}"` : '';
+          cells += `<td class="${cls}"${dataAttrs}>${display}</td>`;
+        }
+      });
+      cells += `<td class="summary-col summary-divider fw-bold">${rowTeam.w}</td>`;
+      cells += `<td class="summary-col fw-bold">${rowTeam.pts}</td>`;
+      cells += `<td class="summary-col">${rowTeam.nrrDDCA.toFixed(3)}</td>`;
+      return `<tr>${cells}</tr>`;
+    }).join('');
+
+    setTimeout(initMatrixPopovers, 50);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SYNC — AUTH
+  // ─────────────────────────────────────────────────────────────
+  function syncAttemptLogin() {
+    const pin = document.getElementById('syncPinInput').value;
+    const btn = document.querySelector('#syncLoginSection button');
+    btn.disabled = true; btn.textContent = 'Checking...';
+    google.script.run.withSuccessHandler(isValid => {
+      btn.disabled = false; btn.textContent = 'Unlock';
+      if (isValid) {
+        _adminPin = pin;
+        document.getElementById('syncLoginSection').style.display = 'none';
+        document.getElementById('syncContent').style.display     = 'block';
+        document.getElementById('adminLogin').style.display = 'none';
+        document.getElementById('scoreForm').style.display  = 'block';
+        document.getElementById('hiddenPin').value          = pin;
+      } else {
+        document.getElementById('syncLoginError').style.display = 'block';
+      }
+    }).checkAdminPin(pin);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SYNC — FETCH QUEUE
+  // ─────────────────────────────────────────────────────────────
+  function fetchSyncQueue() {
+    const btn    = document.getElementById('syncFetchBtn');
+    const loader = document.getElementById('syncLoader');
+    const status = document.getElementById('syncStatusText');
+    btn.disabled = true;
+    loader.style.display = 'inline-block';
+    status.textContent   = 'Fetching from TNCA…';
+
+    google.script.run
+      .withSuccessHandler(async function(queue) {
+        _syncQueue = queue;
+        loader.style.display = 'none';
+        btn.disabled         = false;
+
+        const badge = document.getElementById('syncQueueBadge');
+        if (queue.length > 0) {
+          badge.textContent    = `${queue.length} pending`;
+          badge.className      = 'badge bg-warning text-dark fs-6 queue-count-badge';
+          badge.style.display  = 'inline-block';
+          status.textContent   = `${queue.length} match${queue.length !== 1 ? 'es' : ''} ready for review.`;
+        } else {
+          badge.textContent   = '✅ All synced';
+          badge.className     = 'badge bg-success fs-6 queue-count-badge';
+          badge.style.display = 'inline-block';
+          status.textContent  = 'No new matches found.';
+        }
+        await renderSyncQueue(queue);
+      })
+      .withFailureHandler(function(err) {
+        loader.style.display = 'none';
+        btn.disabled         = false;
+        status.textContent   = '❌ Error: ' + err.message;
+      })
+      .getTNCAQueue();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SYNC — HELPERS
+  // ─────────────────────────────────────────────────────────────
+  function divisionLabel(compId, fallback) {
+    return SYNC_DIVISION_LABELS[compId] || fallback || ('Comp ' + compId);
+  }
+
+  function getGroundMatch(tncaGround) {
+    if (!tncaGround) return '';
+    const name = tncaGround.toLowerCase().trim();
+    const firstWord = name.split(/\s+/)[0];
+    return _syncGrounds.find(g =>
+      g.toLowerCase().includes(firstWord) || name.includes(g.toLowerCase().split(/\s+/)[0])
+    ) || '';
+  }
+
+  function loadTeamsForPool(pool) {
+    if (_syncTeamCache[pool]) return Promise.resolve(_syncTeamCache[pool]);
+    return new Promise(resolve => {
+      google.script.run
+        .withSuccessHandler(teams => {
+          _syncTeamCache[pool] = teams || [];
+          resolve(teams || []);
+        })
+        .withFailureHandler(() => resolve([]))
+        .getTeams(pool);
+    });
+  }
+
+  function findTeamMatch(teams, tncaName) {
+    if (!tncaName || !teams.length) return '';
+    const norm = tncaName.toUpperCase().trim();
+    const exact = teams.find(t => t.toUpperCase().trim() === norm);
+    if (exact) return exact;
+    const tok = norm.split(/[\s,]+/)[0];
+    return teams.find(t => {
+      const gt = t.toUpperCase();
+      return gt.includes(tok) || norm.includes(gt.split(/[\s,]+/)[0]);
+    }) || '';
+  }
+
+  function buildTeamOptions(teams, selected) {
+    return '<option value="">-- Select Team --</option>' +
+      teams.map(t => `<option value="${t}"${t === selected ? ' selected' : ''}>${escHtml(t)}</option>`).join('');
+  }
+
+  function buildSelectOptions(items, selected) {
+    return '<option value="">-- Select --</option>' +
+      items.map(i => `<option value="${i}"${i === selected ? ' selected' : ''}>${escHtml(i)}</option>`).join('');
+  }
+
+  function formatMatchDate(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00');
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function divLabel(match) {
+    return match.divisionLabel || divisionLabel(match.competitionId);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SYNC — RENDER QUEUE
+  // ─────────────────────────────────────────────────────────────
+  async function renderSyncQueue(queue) {
+    const container = document.getElementById('syncQueueList');
+    if (!queue || queue.length === 0) {
+      container.innerHTML = `
+        <div class="text-center py-5 text-muted">
+          <div style="font-size:3rem;">✅</div>
+          <h5 class="mt-3">All matches are up to date</h5>
+          <p class="small">No pending matches found in TNCA.</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = `<div class="text-center text-muted small py-2">Preparing ${queue.length} match card${queue.length > 1 ? 's' : ''}…</div>`;
+
+    const cards = [];
+    for (const match of queue) {
+      const pool     = match.pool || '';
+      const teams    = pool ? await loadTeamsForPool(pool) : [];
+      const bat1Team = findTeamMatch(teams, match.batFirstTeam);
+      const bat2Team = findTeamMatch(teams, match.batSecondTeam);
+      const tossTeam = findTeamMatch(teams, match.tossWinner) || bat1Team;
+      const ground   = getGroundMatch(match.ground);
+      cards.push(buildMatchCard(match, pool, teams, bat1Team, bat2Team, tossTeam, ground));
+    }
+
+    container.innerHTML = cards.join('');
+    attachCardListeners();
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SYNC — BUILD CARD HTML
+  // ─────────────────────────────────────────────────────────────
+  function buildMatchCard(match, pool, teams, bat1Team, bat2Team, tossTeam, ground) {
+    const poolOpts   = buildSelectOptions(_syncPools,  pool);
+    const groundOpts = buildSelectOptions(_syncGrounds, ground);
+    const teamOpts1  = buildTeamOptions(teams, bat1Team);
+    const teamOpts2  = buildTeamOptions(teams, bat2Team);
+    const tossOpts   = buildTeamOptions(teams, tossTeam);
+
+    const bat1Warn   = bat1Team  ? '' : ' border-warning';
+    const bat2Warn   = bat2Team  ? '' : ' border-warning';
+    const poolWarn   = pool      ? '' : ' border-warning';
+    const groundWarn = ground    ? '' : ' border-warning';
+
+    return ` <div class="card mb-4 sync-card shadow-sm" data-match-id="${match.matchId}">
+  <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+    <div class="d-flex align-items-center gap-2">
+      <span class="fw-bold">${formatMatchDate(match.date)}</span>
+      <span class="badge bg-secondary sync-source-badge">${escHtml(divLabel(match))}</span>
+      <span class="text-secondary small">Match #${match.matchId}</span>
+    </div>
+    <span class="badge bg-warning text-dark sync-status-badge">Pending</span>
+  </div>
+  <div class="card-body py-3">
+    <div class="row g-2 mb-3 align-items-end">
+      <div class="col-md-5">
+        <div class="sync-field-label">Pool</div>
+        <select class="form-select form-select-sm sync-pool-sel${poolWarn}">${poolOpts}</select>
+      </div>
+      <div class="col-md-2">
+        <div class="sync-field-label">Match Overs (t_ov)</div>
+        <input type="number" class="form-control form-control-sm sync-tov text-center fw-bold" value="${match.tov}" min="1" max="50">
+      </div>
+      <div class="col-md-5">
+        <div class="sync-field-label">Ground</div>
+        <select class="form-select form-select-sm sync-ground-sel${groundWarn}">${groundOpts}</select>
+      </div>
+    </div>
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <div class="card border-primary h-100${bat1Warn}">
+          <div class="card-header bg-primary text-white py-1 small fw-bold">🏏 Batting 1st</div>
+          <div class="card-body py-2">
+            <div class="sync-field-label mb-1">Team</div>
+            <select class="form-select form-select-sm mb-2 sync-bat1-sel">${teamOpts1}</select>
+            <div class="sync-field-label mb-1">Score</div>
+            <div class="input-group input-group-sm mb-1">
+              <span class="input-group-text" style="width:52px">Runs</span>
+              <input type="number" class="form-control sync-score1" value="${match.score1}">
+            </div>
+            <div class="row g-1">
+              <div class="col-6"><div class="input-group input-group-sm"><span class="input-group-text">Ov</span><input type="number" class="form-control sync-overs1" value="${match.overs1}" step="0.1"></div></div>
+              <div class="col-6"><div class="input-group input-group-sm"><span class="input-group-text">Wk</span><input type="number" class="form-control sync-wkts1" value="${match.wkts1}" max="10"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card border-success h-100${bat2Warn}">
+          <div class="card-header bg-success text-white py-1 small fw-bold">🏏 Batting 2nd</div>
+          <div class="card-body py-2">
+            <div class="sync-field-label mb-1">Team</div>
+            <select class="form-select form-select-sm mb-2 sync-bat2-sel">${teamOpts2}</select>
+            <div class="sync-field-label mb-1">Score</div>
+            <div class="input-group input-group-sm mb-1">
+              <span class="input-group-text" style="width:52px">Runs</span>
+              <input type="number" class="form-control sync-score2" value="${match.score2}">
+            </div>
+            <div class="row g-1">
+              <div class="col-6"><div class="input-group input-group-sm"><span class="input-group-text">Ov</span><input type="number" class="form-control sync-overs2" value="${match.overs2}" step="0.1"></div></div>
+              <div class="col-6"><div class="input-group input-group-sm"><span class="input-group-text">Wk</span><input type="number" class="form-control sync-wkts2" value="${match.wkts2}" max="10"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <div class="sync-field-label">Toss Won By</div>
+        <select class="form-select form-select-sm sync-toss-winner">${tossOpts}</select>
+      </div>
+      <div class="col-md-2">
+        <div class="sync-field-label">Elected to</div>
+        <select class="form-select form-select-sm sync-toss-choice">
+          <option value="Bat"  ${match.tossChoice === 'Bat'  ? 'selected' : ''}>Bat</option>
+          <option value="Bowl" ${match.tossChoice === 'Bowl' ? 'selected' : ''}>Bowl</option>
+        </select>
+      </div>
+      <div class="col-md-6">
+        <div class="sync-field-label">Result <span class="text-muted fw-normal">(from TNCA — read only)</span></div>
+        <input type="text" class="form-control form-control-sm fst-italic text-muted" value="${escAttr(match.result)}" readonly>
+      </div>
+    </div>
+  </div>
+  <div class="card-footer d-flex justify-content-between align-items-center bg-light">
+    <button class="btn btn-outline-secondary btn-sm sync-skip-btn" data-match-id="${match.matchId}">⏭ Skip for Now</button>
+    <div class="text-muted small sync-save-status"></div>
+    <button class="btn btn-success btn-sm px-4 sync-save-btn" data-match-id="${match.matchId}">✓ Add to Database</button>
+  </div>
+</div>`;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SYNC — ATTACH LISTENERS
+  // ─────────────────────────────────────────────────────────────
+  function attachCardListeners() {
+    document.querySelectorAll('.sync-save-btn').forEach(btn => {
+      btn.addEventListener('click', function() { saveSyncMatch(parseInt(this.dataset.matchId)); });
+    });
+
+    document.querySelectorAll('.sync-skip-btn').forEach(btn => {
+      btn.addEventListener('click', function() { skipSyncMatch(parseInt(this.dataset.matchId)); });
+    });
+
+    document.querySelectorAll('.sync-pool-sel').forEach(sel => {
+      sel.addEventListener('change', async function() {
+        const card    = this.closest('.sync-card');
+        const newPool = this.value;
+        if (!newPool) return;
+        const teams = await loadTeamsForPool(newPool);
+        const emptyOpts = buildTeamOptions(teams, '');
+        card.querySelector('.sync-bat1-sel').innerHTML  = emptyOpts;
+        card.querySelector('.sync-bat2-sel').innerHTML  = emptyOpts;
+        card.querySelector('.sync-toss-winner').innerHTML = emptyOpts;
+      });
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SYNC — SKIP
+  // ─────────────────────────────────────────────────────────────
+  function skipSyncMatch(matchId) {
+    const card = document.querySelector(`.sync-card[data-match-id="${matchId}"]`);
+    if (!card) return;
+    card.classList.add('is-skipped');
+    card.querySelector('.sync-status-badge').textContent = 'Skipped';
+    card.querySelector('.sync-status-badge').className   = 'badge bg-secondary sync-status-badge';
+    card.querySelector('.sync-skip-btn').disabled        = true;
+    card.querySelector('.sync-save-btn').disabled        = true;
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  SYNC — SAVE
+  // ─────────────────────────────────────────────────────────────
+  function saveSyncMatch(matchId) {
+    const card  = document.querySelector(`.sync-card[data-match-id="${matchId}"]`);
+    const match = _syncQueue.find(m => m.matchId === matchId);
+    if (!card || !match) return;
+
+    const pool      = card.querySelector('.sync-pool-sel').value;
+    const tov       = card.querySelector('.sync-tov').value;
+    const ground    = card.querySelector('.sync-ground-sel').value;
+    const batFirst  = card.querySelector('.sync-bat1-sel').value;
+    const batSecond = card.querySelector('.sync-bat2-sel').value;
+    const score1    = card.querySelector('.sync-score1').value;
+    const overs1    = card.querySelector('.sync-overs1').value;
+    const wkts1     = card.querySelector('.sync-wkts1').value;
+    const score2    = card.querySelector('.sync-score2').value;
+    const overs2    = card.querySelector('.sync-overs2').value;
+    const wkts2     = card.querySelector('.sync-wkts2').value;
+    const tossWinner = card.querySelector('.sync-toss-winner').value;
+    const tossChoice = card.querySelector('.sync-toss-choice').value;
+
+    if (!pool)      { alert('Please select a Pool.');           return; }
+    if (!ground)    { alert('Please select a Ground.');         return; }
+    if (!batFirst)  { alert('Please select the Batting 1st team.'); return; }
+    if (!batSecond) { alert('Please select the Batting 2nd team.'); return; }
+    if (batFirst === batSecond) { alert('Both teams cannot be the same.'); return; }
+    if (!tossWinner) { alert('Please select the Toss winner.'); return; }
+    if (!score1 || !overs1 || !score2 || !overs2) { alert('Please fill in all score fields.'); return; }
+
+    const saveBtn   = card.querySelector('.sync-save-btn');
+    const skipBtn   = card.querySelector('.sync-skip-btn');
+    const statusEl  = card.querySelector('.sync-save-status');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    const payload = {
+      pin: _adminPin,
+      date:          match.date,
+      matchId:       match.matchId,
+      competitionId: match.competitionId,
+      matchOvers:    tov,
+      ground:        ground,
+      pool:          pool,
+      teamA:         batFirst,
+      teamB:         batSecond,
+      tossWinner:    tossWinner,
+      tossChoice:    tossChoice,
+      batFirst:      batFirst,
+      batSecond:     batSecond,
+      score1, overs1, wkts1,
+      score2, overs2, wkts2
+    };
+
+    google.script.run
+      .withSuccessHandler(function() {
+        card.classList.add('is-saved');
+        card.querySelector('.card-header').classList.replace('bg-dark', 'bg-success');
+        card.querySelector('.sync-status-badge').textContent = '✓ Saved';
+        card.querySelector('.sync-status-badge').className   = 'badge bg-light text-dark sync-status-badge';
+        card.querySelector('.card-footer').innerHTML =
+          '<span class="text-success fw-bold small">✓ Added to database</span>';
+
+        _syncQueue = _syncQueue.filter(m => m.matchId !== matchId);
+        const badge = document.getElementById('syncQueueBadge');
+        const remaining = _syncQueue.filter(m => {
+          const c = document.querySelector(`.sync-card[data-match-id="${m.matchId}"]`);
+          return c && !c.classList.contains('is-saved') && !c.classList.contains('is-skipped');
+        }).length;
+        badge.textContent = remaining > 0 ? `${remaining} pending` : '✅ All synced';
+        badge.className   = remaining > 0
+          ? 'badge bg-warning text-dark fs-6 queue-count-badge'
+          : 'badge bg-success fs-6 queue-count-badge';
+        document.getElementById('syncStatusText').textContent =
+          remaining > 0 ? `${remaining} match${remaining !== 1 ? 'es' : ''} remaining.` : 'All done!';
+      })
+      .withFailureHandler(function(err) {
+        saveBtn.disabled    = false;
+        saveBtn.textContent = '✓ Add to Database';
+        statusEl.textContent = '❌ ' + err.message;
+        statusEl.className  = 'text-danger small sync-save-status';
+      })
+      .submitSyncedMatch(payload);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  RESULTS TAB
+  // ─────────────────────────────────────────────────────────────
+  let _resultsData     = [];
+  let _resultsPool     = '';
+
+  function loadResults(pool) {
+    if (!pool) return;
+    _resultsPool = pool;
+    document.getElementById('resultsLoader').style.display = 'block';
+    document.getElementById('resultsBody').innerHTML =
+      '<tr><td colspan="8" class="text-muted">Loading…</td></tr>';
+    document.getElementById('resultsCount').textContent = '';
+
+    google.script.run
+      .withSuccessHandler(function(data) {
+        document.getElementById('resultsLoader').style.display = 'none';
+        _resultsData = data;
+        populateResultsTeamFilter(data);
+        renderResults(data, '');
+        applyPendingFilter();
+      })
+      .withFailureHandler(function(err) {
+        document.getElementById('resultsLoader').style.display = 'none';
+        document.getElementById('resultsBody').innerHTML =
+          `<tr><td colspan="8" class="text-danger">Error: ${escHtml(err.message)}</td></tr>`;
+      })
+      .getResults(pool);
+  }
+
+  function populateResultsTeamFilter(data) {
+    const teams = new Set();
+    data.forEach(r => { if (r.bat1) teams.add(r.bat1); if (r.bat2) teams.add(r.bat2); });
+    const sel = document.getElementById('resultsTeamSelect');
+    sel.innerHTML = '<option value="">All Teams</option>' +
+      Array.from(teams).sort().map(t => `<option value="${t}">${escHtml(t)}</option>`).join('');
+    sel.value = '';
+  }
+
+  function renderResults(data, teamFilter) {
+    const tbody = document.getElementById('resultsBody');
+    const countEl = document.getElementById('resultsCount');
+    const filtered = teamFilter
+      ? data.filter(r => r.bat1 === teamFilter || r.bat2 === teamFilter)
+      : data;
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-muted py-4 text-center">No results found.</td></tr>';
+      countEl.textContent = '';
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(r => {
+      const isTeamFilter = !!teamFilter;
+      const teamWon  = teamFilter && r.winner === teamFilter;
+      const teamLost = teamFilter && r.winner !== teamFilter && r.winner !== 'Tie';
+      const rowCls   = isTeamFilter ? (teamWon ? 'result-win-row' : teamLost ? 'result-loss-row' : '') : '';
+
+      const s1 = `${r.score1}/${r.wkts1} (${parseFloat(r.overs1).toFixed(1)})`;
+      const s2 = `${r.score2}/${r.wkts2} (${parseFloat(r.overs2).toFixed(1)})`;
+      const w1 = r.bat1 === r.winner;
+      const w2 = r.bat2 === r.winner;
+
+      let marginText = 'No Result';
+      let hasBonus = false;
+      if (r.winner === 'Tie') {
+        marginText = 'Match Tied';
+      } else if (w1) {
+        const runDiff = r.score1 - r.score2;
+        marginText = `${escHtml(r.bat1)} won by ${runDiff} runs`;
+        if ((runDiff / r.score1) > 0.20) hasBonus = true;
+      } else if (w2) {
+        const wktDiff = 10 - r.wkts2;
+        marginText = `${escHtml(r.bat2)} won by ${wktDiff} wickets`;
+        if (r.overs2 <= (r.tov * 0.8)) hasBonus = true;
+      }
+
+      const tbDisplay = r.tieBreaker ? `<br><span class="text-warning small" style="font-size:0.65rem;">(${escHtml(r.tieBreaker)})</span>` : '';
+      const bonusBadge = hasBonus ? `<span class="bonus-chip ms-1">✨ Bonus</span>` : '';
+      const tossInfo = r.tossWinner ? `${escHtml(r.tossWinner)} (${escHtml(r.tossChoice)})` : '—';
+
+      return `<tr class="${rowCls}">
+        <td class="small">
+          <div class="fw-bold text-secondary">${escHtml(r.date)}</div>
+          <span class="badge bg-light text-dark border mt-1">${r.tov} Ov</span>
+        </td>
+        <td class="text-end" style="width: 25%;">
+          <div class="fw-bold ${w1 ? 'text-dark' : 'text-muted'}">${w1 ? '🏆 ' : ''}${escHtml(r.bat1)}</div>
+          <div class="small text-secondary" style="font-family: 'Courier New', monospace; font-size: 0.85rem;">${s1}</div>
+        </td>
+        <td class="text-muted small fw-bold px-1">vs</td>
+        <td class="text-start" style="width: 25%;">
+          <div class="fw-bold ${w2 ? 'text-dark' : 'text-muted'}">${w2 ? '🏆 ' : ''}${escHtml(r.bat2)}</div>
+          <div class="small text-secondary" style="font-family: 'Courier New', monospace; font-size: 0.85rem;">${s2}</div>
+        </td>
+        <td class="align-middle">
+          <div class="fw-bold ${hasBonus ? 'text-success' : 'text-primary'}" style="font-size: 0.8rem;">${marginText}</div>
+          ${bonusBadge}${tbDisplay}
+        </td>
+        <td class="d-none d-md-table-cell small text-muted text-start">
+          <div class="text-truncate" style="max-width:180px;" title="${escAttr(r.ground)}">📍 ${escHtml(r.ground)}</div>
+          <div class="text-truncate mt-1" style="max-width:180px;" title="${escAttr(tossInfo)}">🪙 ${tossInfo}</div>
+        </td>
+      </tr>`;
+    }).join('');
+
+    countEl.textContent = `Showing ${filtered.length} of ${data.length} result${data.length !== 1 ? 's' : ''}`;
+
+    const cardsEl = document.getElementById('resultCards');
+    if (cardsEl) {
+      cardsEl.innerHTML = filtered.length === 0
+        ? '<p class="text-muted text-center py-3">No results found.</p>'
+        : filtered.map(r => {
+            const teamWon  = teamFilter && r.winner === teamFilter;
+            const teamLost = teamFilter && r.winner !== teamFilter && r.winner !== 'Tie';
+            const cardCls  = teamWon ? 'mc-win' : teamLost ? 'mc-loss' : '';
+            const s1 = `${r.score1}/${r.wkts1} <span class="text-muted fw-normal" style="font-size:0.7rem">(${parseFloat(r.overs1).toFixed(1)})</span>`;
+            const s2 = `${r.score2}/${r.wkts2} <span class="text-muted fw-normal" style="font-size:0.7rem">(${parseFloat(r.overs2).toFixed(1)})</span>`;
+            const w1 = r.bat1 === r.winner;
+            const w2 = r.bat2 === r.winner;
+
+            let marginText = 'No Result';
+            let hasBonus = false;
+            if (r.winner === 'Tie') {
+              marginText = 'Match Tied';
+            } else if (w1) {
+              const runDiff = r.score1 - r.score2;
+              marginText = `${escHtml(r.bat1)} won by ${runDiff} runs`;
+              if ((runDiff / r.score1) > 0.20) hasBonus = true;
+            } else if (w2) {
+              const wktDiff = 10 - r.wkts2;
+              marginText = `${escHtml(r.bat2)} won by ${wktDiff} wickets`;
+              if (r.overs2 <= (r.tov * 0.8)) hasBonus = true;
+            }
+            const tbLine = r.tieBreaker ? ` <span class="text-warning">(${escHtml(r.tieBreaker)})</span>` : '';
+            const bonusBadge = hasBonus ? `<span class="bonus-chip">✨ Bonus</span>` : '';
+
+            return `<div class="match-card ${cardCls} position-relative">
+              <div class="mc-top-right">${r.tov} Ov</div>
+              <div class="match-meta pe-5">
+                <span>📅 ${escHtml(r.date)}</span>
+                ${r.ground ? `<span class="mc-ground">· ${escHtml(r.ground)}</span>` : ''}
+              </div>
+              <div class="match-innings">
+                <span class="mc-team${w1 ? ' fw-bold' : ''}">${w1 ? '🏆 ' : ''}${escHtml(r.bat1)}</span>
+                <span class="mc-score">${s1}</span>
+              </div>
+              <div class="match-innings">
+                <span class="mc-team${w2 ? ' fw-bold' : ''}">${w2 ? '🏆 ' : ''}${escHtml(r.bat2)}</span>
+                <span class="mc-score">${s2}</span>
+              </div>
+              <div class="match-card-result">
+                <span>${marginText}${tbLine}</span>
+                ${bonusBadge}
+              </div>
+            </div>`;
+          }).join('');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  EVENT LISTENERS
+  // ─────────────────────────────────────────────────────────────
+  function attachEventListeners() {
+    // Pool change listeners handled by feature-pack DOMContentLoaded block above.
+    // Legacy stubs kept for safety — they are no-ops since the new listeners run first
+    // and handle caching + skeleton loading.
+
+    const resultsTeamSel = document.getElementById('resultsTeamSelect');
+    if (resultsTeamSel) {
+      resultsTeamSel.addEventListener('change', function() {
+        renderResults(_resultsData, this.value);
+      });
+    }
+
+    // results-tab shown handled by feature-pack (uses cached loadResultsWithCache)
+
+    const adminPoolSel = document.getElementById('adminPoolSelect');
+    if (adminPoolSel) {
+      adminPoolSel.addEventListener('change', function() {
+        const pool = this.value; if(!pool) return;
+        document.querySelectorAll('.team-selector').forEach(el => {
+          el.innerHTML = '<option>Loading...</option>'; el.disabled = true; el.value = '';
+        });
+        google.script.run.withSuccessHandler(teams => {
+          const opts = '<option value="">Select Team</option>' +
+            teams.map(t => `<option value="${t}">${escHtml(t)}</option>`).join('');
+          document.querySelectorAll('.team-selector').forEach(el => {
+            el.innerHTML = opts; el.disabled = false;
+          });
+        }).getTeams(pool);
+      });
+    }
+
+    const teamA = document.getElementById('teamA');
+    const teamB = document.getElementById('teamB');
+    const tossWinner = document.getElementById('tossWinner');
+    const tossChoice = document.getElementById('tossChoice');
+    const scoreForm = document.getElementById('scoreForm');
+
+    if (teamA && teamB && tossWinner && tossChoice && scoreForm) {
+      const updateToss = () => {
+        const vA = teamA.value, vB = teamB.value;
+        document.getElementById('batFirst').value = '';
+        document.getElementById('batSecond').value = '';
+        if (vA && vB && vA === vB) { alert('Same team selected twice.'); teamB.value = ''; return; }
+        if (vA && vB) {
+          tossWinner.disabled = false;
+          tossWinner.innerHTML = `<option value="">Winner?</option><option value="${vA}">${escHtml(vA)}</option><option value="${vB}">${escHtml(vB)}</option>`;
+          tossChoice.disabled = false;
+        } else {
+          tossWinner.disabled = true; tossChoice.disabled = true;
+        }
+      };
+      teamA.addEventListener('change', updateToss);
+      teamB.addEventListener('change', updateToss);
+
+      const calcOrder = () => {
+        const winner = tossWinner.value, choice = tossChoice.value;
+        const vA = teamA.value, vB = teamB.value;
+        if (!winner || !choice || !vA || !vB) return;
+        const loser = winner === vA ? vB : vA;
+        document.getElementById('batFirst').value  = choice === 'Bat' ? winner : loser;
+        document.getElementById('batSecond').value = choice === 'Bat' ? loser  : winner;
+      };
+      tossWinner.addEventListener('change', calcOrder);
+      tossChoice.addEventListener('change', calcOrder);
+
+      scoreForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (!document.getElementById('batFirst').value) { alert('Complete Toss Details.'); return; }
+        const btn = this.querySelector('button[type="submit"]');
+        const orig = btn.innerText;
+        btn.disabled = true; btn.innerText = 'Saving...';
+        google.script.run.withSuccessHandler(msg => {
+          alert(msg); this.reset();
+          tossWinner.disabled = true; tossChoice.disabled = true;
+          btn.disabled = false; btn.innerText = orig;
+        }).withFailureHandler(err => {
+          alert('Error: ' + err);
+          btn.disabled = false; btn.innerText = orig;
+        }).submitScore(this);
+      });
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  //  ADMIN TAB — LOGIN
+  // ─────────────────────────────────────────────────────────────
+  function attemptLogin() {
+    const pin = document.getElementById('loginPin').value;
+    const btn = document.querySelector('#adminLogin button');
+    btn.disabled = true; btn.innerText = 'Checking...';
+    google.script.run.withSuccessHandler(isValid => {
+      btn.disabled = false; btn.innerText = 'Unlock';
+      if (isValid) {
+        _adminPin = pin;
+        document.getElementById('adminLogin').style.display = 'none';
+        document.getElementById('scoreForm').style.display  = 'block';
+        document.getElementById('hiddenPin').value          = pin;
+        document.getElementById('syncLoginSection').style.display = 'none';
+        document.getElementById('syncContent').style.display      = 'block';
+      } else {
+        document.getElementById('loginError').style.display = 'block';
+      }
+    }).checkAdminPin(pin);
+  }
+
+</script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// FEATURE PACK: Dark Mode · Skeleton · Animated Numbers · Cache · Lazy Tabs
+//               Team Search · Swipe Gestures · Qual Bars · NRR Sim · Poll
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── 1. DARK MODE ──────────────────────────────────────────────────────────
+(function() {
+  var saved = localStorage.getItem('ddca-dark');
+  if (saved === '1') { document.body.classList.add('dark-mode'); updateDarkBtn(true); }
+})();
+
+window.ddcaToggleDark = function() {
+  var isDark = document.body.classList.toggle('dark-mode');
+  localStorage.setItem('ddca-dark', isDark ? '1' : '0');
+  updateDarkBtn(isDark);
+};
+function updateDarkBtn(isDark) {
+  var btn = document.getElementById('dark-toggle');
+  if (btn) btn.textContent = isDark ? '☀️ Light' : '🌙 Dark';
+}
+
+// ─── 2. CLIENT-SIDE CACHE (5-minute TTL) ──────────────────────────────────
+var _dataCache = {};
+var CACHE_TTL = 5 * 60 * 1000;
+
+function cacheSet(key, val) { _dataCache[key] = { ts: Date.now(), val: val }; }
+function cacheGet(key) {
+  var e = _dataCache[key];
+  if (!e) return null;
+  if (Date.now() - e.ts > CACHE_TTL) { delete _dataCache[key]; return null; }
+  return e.val;
+}
+
+// ─── 3. LAZY LOADING + SKELETON + ANIMATED NUMBERS ────────────────────────
+var _tabLoaded = { view: false, matrix: false, results: false };
+
+// Override pool change listeners to use cache and skeletons
+document.addEventListener('DOMContentLoaded', function() {
+  // Patch viewPoolSelect
+  var viewSel = document.getElementById('viewPoolSelect');
+  if (viewSel) {
+    viewSel.addEventListener('change', function() {
+      var pool = this.value; if (!pool) return;
+      _tabLoaded.view = false;
+      loadStandingsWithCache(pool);
+    });
+  }
+  // Patch matrixPoolSelect
+  var matSel = document.getElementById('matrixPoolSelect');
+  if (matSel) {
+    matSel.addEventListener('change', function() {
+      var pool = this.value; if (!pool) return;
+      _tabLoaded.matrix = false;
+      loadMatrixWithCache(pool);
+    });
+  }
+  // Patch resultsPoolSelect
+  var resSel = document.getElementById('resultsPoolSelect');
+  if (resSel) {
+    resSel.addEventListener('change', function() {
+      var pool = this.value;
+      document.getElementById('resultsTeamSelect').innerHTML = '<option value="">All Teams</option>';
+      _resultsData = [];
+      if (!pool) return;
+      _tabLoaded.results = false;
+      loadResultsWithCache(pool);
+    });
+  }
+
+  // Lazy tab: results and matrix only load when shown
+  var matrixTab = document.getElementById('matrix-tab');
+  if (matrixTab) {
+    matrixTab.addEventListener('shown.bs.tab', function() {
+      if (_tabLoaded.matrix) return;
+      var pool = document.getElementById('matrixPoolSelect').value;
+      if (pool) loadMatrixWithCache(pool);
+    });
+  }
+  var resultsTab = document.getElementById('results-tab');
+  if (resultsTab) {
+    resultsTab.addEventListener('shown.bs.tab', function() {
+      if (_tabLoaded.results) return;
+      var pool = document.getElementById('resultsPoolSelect').value;
+      if (pool && _resultsPool !== pool) loadResultsWithCache(pool);
+    });
+  }
+
+  // Swipe gestures on tab content
+  initSwipeGestures();
+});
+
+function showStandingsSkeleton() {
+  var skel = document.getElementById('standingsSkeleton');
+  var cards = document.getElementById('standingsCards');
+  if (skel)  { skel.style.display  = 'block'; }
+  if (cards) { cards.innerHTML = ''; }
+  var tbody = document.getElementById('standingsBody');
+  if (tbody) {
+    var rows = '';
+    for (var i = 0; i < 5; i++) {
+      rows += '<tr>' + Array(7).fill('<td><div class="skel" style="height:11px;width:' + (50 + Math.random()*35|0) + '%;margin:0 auto;"></div></td>').join('') + '</tr>';
+    }
+    tbody.innerHTML = rows;
+  }
+}
+function hideStandingsSkeleton() {
+  var skel = document.getElementById('standingsSkeleton');
+  if (skel) skel.style.display = 'none';
+}
+
+function loadStandingsWithCache(pool) {
+  var cached = cacheGet('standings:' + pool);
+  if (cached) {
+    renderStandingsAnimated(cached);
+    _tabLoaded.view = true;
+    return;
+  }
+  showStandingsSkeleton();
+  document.getElementById('viewLoader').style.display = 'block';
+  google.script.run
+    .withSuccessHandler(function(data) {
+      document.getElementById('viewLoader').style.display = 'none';
+      hideStandingsSkeleton();
+      cacheSet('standings:' + pool, data);
+      renderStandingsAnimated(data);
+      _tabLoaded.view = true;
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('viewLoader').style.display = 'none';
+      hideStandingsSkeleton();
+      document.getElementById('standingsBody').innerHTML =
+        '<tr><td colspan="7" class="text-danger">Error: ' + escHtml(err.message) + '</td></tr>';
+    })
+    .getStandings(pool);
+}
+
+function loadMatrixWithCache(pool) {
+  var cached = cacheGet('matrix:' + pool);
+  if (cached) { renderMatrix(cached); _tabLoaded.matrix = true; return; }
+  document.getElementById('matrixLoader').style.display = 'block';
+  google.script.run
+    .withSuccessHandler(function(data) {
+      document.getElementById('matrixLoader').style.display = 'none';
+      cacheSet('matrix:' + pool, data);
+      renderMatrix(data);
+      _tabLoaded.matrix = true;
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('matrixLoader').style.display = 'none';
+      document.getElementById('matrixBody').innerHTML =
+        '<tr><td class="text-danger">Error: ' + escHtml(err.message) + '</td></tr>';
+    })
+    .getMatrixData(pool);
+}
+
+function loadResultsWithCache(pool) {
+  var cached = cacheGet('results:' + pool);
+  if (cached) {
+    _resultsPool = pool; _resultsData = cached;
+    populateResultsTeamFilter(cached); renderResults(cached, '');
+    applyPendingFilter(); _tabLoaded.results = true; return;
+  }
+  _resultsPool = pool;
+  document.getElementById('resultsLoader').style.display = 'block';
+  document.getElementById('resultsBody').innerHTML =
+    '<tr><td colspan="8" class="text-muted">Loading…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(data) {
+      document.getElementById('resultsLoader').style.display = 'none';
+      cacheSet('results:' + pool, data);
+      _resultsData = data;
+      populateResultsTeamFilter(data); renderResults(data, '');
+      applyPendingFilter(); _tabLoaded.results = true;
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('resultsLoader').style.display = 'none';
+      document.getElementById('resultsBody').innerHTML =
+        '<tr><td colspan="8" class="text-danger">Error: ' + escHtml(err.message) + '</td></tr>';
+    })
+    .getResults(pool);
+}
+
+// ─── 4. ANIMATED NUMBER COUNT-UP ──────────────────────────────────────────
+function animateNum(el, target, duration) {
+  duration = duration || 700;
+  var start = 0;
+  var startTime = null;
+  var isFloat = (target % 1 !== 0);
+  function step(ts) {
+    if (!startTime) startTime = ts;
+    var prog = Math.min((ts - startTime) / duration, 1);
+    var ease = 1 - Math.pow(1 - prog, 3);
+    var val = start + (target - start) * ease;
+    el.textContent = isFloat ? val.toFixed(3) : Math.round(val);
+    if (prog < 1) requestAnimationFrame(step);
+    else el.textContent = isFloat ? target.toFixed(3) : target;
+  }
+  requestAnimationFrame(step);
+}
+
+// ─── 5. OVERRIDE renderStandings TO ADD ANIMATIONS + QUAL BARS + POLL ─────
+function renderStandingsAnimated(data) {
+  _standingsData = data;
+
+  // Desktop table
+  var tbody = document.getElementById('standingsBody');
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7">No matches.</td></tr>';
+  } else {
+    tbody.innerHTML = data.map(function(t, i) {
+      return '<tr class="' + (i < 2 ? 'qualifier-row' : '') + '">' +
+        '<td class="fw-bold text-start">' + escHtml(t.name) + '</td>' +
+        '<td>' + t.p + '</td><td>' + t.w + '</td><td>' + t.l + '</td>' +
+        '<td class="fw-bold" data-animate-pts="' + t.pts + '">' + t.pts + '</td>' +
+        '<td class="small text-secondary d-none d-sm-table-cell">' +
+          t.nrrICC +
+          '<span class="nrr-info-icon text-primary" data-team="' + escAttr(t.name) + '" data-type="icc">ⓘ</span>' +
+        '</td>' +
+        '<td class="small text-primary fw-bold" data-animate-nrr="' + t.nrrDDCA + '">' +
+          t.nrrDDCA.toFixed(4) +
+          '<span class="nrr-info-icon text-secondary" data-team="' + escAttr(t.name) + '" data-type="ddca">ⓘ</span>' +
+        '</td>' +
+        '</tr>';
+    }).join('');
+    initNrrPopovers();
+
+    // Animate pts and NRR cells
+    setTimeout(function() {
+      document.querySelectorAll('[data-animate-pts]').forEach(function(el) {
+        animateNum(el, parseInt(el.dataset.animatePts), 600);
+      });
+      document.querySelectorAll('[data-animate-nrr]').forEach(function(el) {
+        animateNum(el, parseFloat(el.dataset.animateNrr), 800);
+      });
+    }, 80);
+  }
+
+  // Mobile cards with animated pts
+  var cardsEl = document.getElementById('standingsCards');
+  if (cardsEl) {
+    cardsEl.innerHTML = data.length === 0
+      ? '<p class="text-muted text-center py-3">No data yet.</p>'
+      : data.map(function(t, i) {
+          var isQ = i < 2;
+          var rankCls = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : '';
+          var nrrSign = t.nrrDDCA >= 0 ? '+' : '';
+          return '<div class="standing-card ' + (isQ ? 'qualifier' : '') + ' ' + rankCls + '">' +
+            '<div class="rank-badge">' + (i + 1) + '</div>' +
+            '<div class="standing-info">' +
+              '<div class="standing-name">' + escHtml(t.name.trim()) + (isQ ? '<span class="qual-chip">Q</span>' : '') + '</div>' +
+              '<div class="standing-meta">P ' + t.p + ' &nbsp;·&nbsp; W ' + t.w + ' &nbsp;·&nbsp; L ' + t.l + '</div>' +
+              '<div class="standing-nrr">NRR ' + nrrSign + t.nrrDDCA.toFixed(3) + '</div>' +
+            '</div>' +
+            '<div class="standing-pts-col">' +
+              '<div class="standing-pts-num" data-card-pts="' + t.pts + '">0</div>' +
+              '<div class="standing-pts-label">pts</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+
+    setTimeout(function() {
+      document.querySelectorAll('[data-card-pts]').forEach(function(el) {
+        animateNum(el, parseInt(el.dataset.cardPts), 700);
+      });
+    }, 100);
+  }
+
+  // Qualification bars
+  renderQualBars(data);
+
+  // NRR simulator team selects
+  populateSimTeams(data);
+
+  // Poll team selects
+  populatePollTeams(data);
+}
+
+// ─── 6. TEAM SEARCH / FILTER ──────────────────────────────────────────────
+window.ddcaFilterStandings = function(query) {
+  var q = (query || '').toLowerCase().trim();
+  // Desktop rows
+  document.querySelectorAll('#standingsBody tr').forEach(function(row) {
+    if (!q) { row.style.display = ''; return; }
+    var nameCell = row.querySelector('td');
+    var text = nameCell ? nameCell.textContent.toLowerCase() : '';
+    row.style.display = text.includes(q) ? '' : 'none';
+  });
+  // Mobile cards
+  document.querySelectorAll('#standingsCards .standing-card').forEach(function(card) {
+    if (!q) { card.style.display = ''; return; }
+    var name = card.querySelector('.standing-name');
+    var text = name ? name.textContent.toLowerCase() : '';
+    card.style.display = text.includes(q) ? '' : 'none';
+  });
+};
+
+// ─── 7. SWIPE GESTURES ────────────────────────────────────────────────────
+function initSwipeGestures() {
+  var content = document.getElementById('myTabContent');
+  if (!content) return;
+  var startX = 0, startY = 0;
+  content.addEventListener('touchstart', function(e) {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+  content.addEventListener('touchend', function(e) {
+    var dx = e.changedTouches[0].clientX - startX;
+    var dy = e.changedTouches[0].clientY - startY;
+    if (Math.abs(dx) < 40 || Math.abs(dy) > Math.abs(dx) * 0.8) return;
+    var tabs = Array.from(document.querySelectorAll('#myTab .nav-link:not([style*="display:none"])'));
+    var activeIdx = tabs.findIndex(function(t) { return t.classList.contains('active'); });
+    var nextIdx = dx < 0 ? activeIdx + 1 : activeIdx - 1;
+    if (nextIdx >= 0 && nextIdx < tabs.length) {
+      bootstrap.Tab.getOrCreateInstance(tabs[nextIdx]).show();
+    }
+  }, { passive: true });
+}
+
+// ─── 8. QUALIFICATION PROGRESS BARS ──────────────────────────────────────
+function renderQualBars(data) {
+  var section = document.getElementById('qualBarsSection');
+  var body    = document.getElementById('qualBarsBody');
+  if (!section || !body || !data.length) return;
+
+  var maxPts   = data[0] ? data[0].pts : 0;
+  var cutoffPts = data.length >= 2 ? data[1].pts : 0;
+  var maxBar   = Math.max(maxPts, cutoffPts, 4);  // avoid div/0
+
+  var colors = ['#198754','#0d6efd','#6f42c1','#fd7e14','#dc3545','#20c997','#6c757d'];
+
+  body.innerHTML = data.map(function(t, i) {
+    var pct = maxBar > 0 ? Math.min(100, (t.pts / maxBar) * 100) : 0;
+    var isQ = i < 2;
+    var col = isQ ? colors[i] : '#adb5bd';
+    return '<div class="qual-bar-row">' +
+      '<span class="qual-bar-name" title="' + escHtml(t.name) + '">' + escHtml(t.name) + '</span>' +
+      '<div class="qual-bar-track">' +
+        '<div class="qual-bar-fill" data-bar-pct="' + pct + '" style="width:0%;background:' + col + ';"></div>' +
+      '</div>' +
+      '<span class="qual-bar-pts">' + t.pts + '</span>' +
+    '</div>';
+  }).join('');
+
+  if (cutoffPts > 0) {
+    body.innerHTML += '<div class="qual-cutoff-line">Qualification cutoff ≈ <strong>' + cutoffPts + ' pts</strong> (current 2nd place)</div>';
+  }
+
+  section.style.display = 'block';
+
+  // Animate bars after paint
+  setTimeout(function() {
+    document.querySelectorAll('[data-bar-pct]').forEach(function(el) {
+      el.style.width = el.dataset.barPct + '%';
+    });
+  }, 80);
+}
+
+// ─── 9. NRR WHAT-IF SIMULATOR ─────────────────────────────────────────────
+var _simBaseData = [];
+
+function populateSimTeams(data) {
+  _simBaseData = data;
+  ['simTeam1', 'simTeam2'].forEach(function(id) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    sel.innerHTML = '<option value="">-- Team --</option>' +
+      data.map(function(t) {
+        return '<option value="' + escAttr(t.name) + '">' + escHtml(t.name) + '</option>';
+      }).join('');
+  });
+  var panel = document.getElementById('nrrSimPanel');
+  if (panel) panel.style.display = '';
+}
+
+window.runNrrSim = function() {
+  var t1 = document.getElementById('simTeam1').value;
+  var t2 = document.getElementById('simTeam2').value;
+  var r1 = parseFloat(document.getElementById('simR1').value);
+  var ov1 = parseFloat(document.getElementById('simOv1').value);
+  var w1 = parseInt(document.getElementById('simW1').value) || 0;
+  var r2 = parseFloat(document.getElementById('simR2').value);
+  var ov2 = parseFloat(document.getElementById('simOv2').value);
+  var w2 = parseInt(document.getElementById('simW2').value) || 0;
+  var tov = parseFloat(document.getElementById('simTov').value) || 50;
+
+  if (!t1 || !t2 || isNaN(r1) || isNaN(ov1) || isNaN(r2) || isNaN(ov2)) {
+    alert('Please fill in both teams and all score fields.'); return;
+  }
+  if (t1 === t2) { alert('Both teams cannot be the same.'); return; }
+
+  // Determine winner & points
+  var pts1 = 0, pts2 = 0;
+  var nrrOv1 = (w1 >= 10) ? tov : ov1;
+  var nrrOv2 = (w2 >= 10) ? tov : ov2;
+
+  if (r1 > r2) {
+    var margin = (r1 - r2) / r1;
+    pts1 = margin > 0.20 ? 5 : 4;
+    pts2 = margin > 0.20 ? -1 : 0;
+  } else if (r2 > r1) {
+    var usedBalls = Math.floor(ov2) * 6 + Math.round((ov2 % 1) * 10);
+    var maxBalls  = Math.floor(tov * 6 * 0.8);
+    pts2 = usedBalls <= maxBalls ? 5 : 4;
+    pts1 = usedBalls <= maxBalls ? -1 : 0;
+  } else {
+    pts1 = 2; pts2 = 2;
+  }
+
+  // Clone standings and apply hypothetical match
+  var simData = _simBaseData.map(function(t) {
+    return {
+      name: t.name, p: t.p, w: t.w, l: t.l, pts: t.pts,
+      runsFor: t.runsFor, ovFor: t.ovFor, wkFor: t.wkFor,
+      runsAg: t.runsAg, ovAg: t.ovAg, wkAg: t.wkAg,
+      nrrDDCA: t.nrrDDCA
+    };
+  });
+
+  function applyMatch(data, teamName, myRuns, myOv, myWk, myNrrOv, oppRuns, oppOv, oppWk, myPts) {
+    var t = data.find(function(x) { return x.name === teamName; });
+    if (!t) return;
+    t.p++;
+    t.pts += myPts;
+    if (myPts >= 4) t.w++;
+    else if (myPts === 2) {} // tie
+    else t.l++;
+    t.runsFor += myRuns; t.ovFor += myNrrOv; t.wkFor += myWk;
+    t.runsAg  += oppRuns; t.ovAg += (oppWk >= 10 ? tov : oppOv); t.wkAg += oppWk;
+    var swF = t.wkFor || 1, swA = t.wkAg || 1;
+    t.nrrDDCA = ((t.ovFor * swF) > 0 ? t.runsFor / (t.ovFor * swF) : 0)
+              - ((t.ovAg  * swA) > 0 ? t.runsAg  / (t.ovAg  * swA) : 0);
+  }
+
+  applyMatch(simData, t1, r1, ov1, w1, nrrOv1, r2, ov2, w2, pts1);
+  applyMatch(simData, t2, r2, ov2, w2, nrrOv2, r1, ov1, w1, pts2);
+
+  var origRanks = {};
+  _simBaseData.forEach(function(t, i) { origRanks[t.name] = i; });
+
+  simData.sort(function(a, b) {
+    if (b.w !== a.w) return b.w - a.w;
+    if (b.pts !== a.pts) return b.pts - a.pts;
+    return b.nrrDDCA - a.nrrDDCA;
+  });
+
+  var resultEl = document.getElementById('nrrSimResult');
+  var tbody    = document.getElementById('nrrSimBody');
+  resultEl.style.display = '';
+  tbody.innerHTML = simData.map(function(t, i) {
+    var oldRank = origRanks[t.name];
+    var arrow = '';
+    if (i < oldRank) arrow = '<span class="sim-moved-up">▲' + (oldRank - i) + '</span>';
+    else if (i > oldRank) arrow = '<span class="sim-moved-down">▼' + (i - oldRank) + '</span>';
+    var highlight = (t.name === t1 || t.name === t2) ? 'font-weight:700;background:rgba(13,110,253,0.06);' : '';
+    return '<tr style="' + highlight + '">' +
+      '<td class="sim-rank-cell">' + (i + 1) + '</td>' +
+      '<td class="sim-name-cell">' + escHtml(t.name) + '</td>' +
+      '<td class="sim-pts-cell">' + t.pts + '</td>' +
+      '<td class="sim-nrr-cell">' + (t.nrrDDCA >= 0 ? '+' : '') + t.nrrDDCA.toFixed(3) + '</td>' +
+      '<td>' + arrow + '</td>' +
+    '</tr>';
+  }).join('');
+};
+
+window.resetNrrSim = function() {
+  ['simTeam1','simTeam2','simR1','simOv1','simW1','simR2','simOv2','simW2'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) { if (el.tagName === 'SELECT') el.selectedIndex = 0; else el.value = ''; }
+  });
+  document.getElementById('nrrSimResult').style.display = 'none';
+};
+
+// ─── 10. MATCH PREDICTION POLL ────────────────────────────────────────────
+var _pollPool = '';
+var _pollVotedFor = null;
+var _pollVotes = {};
+
+function populatePollTeams(data) {
+  _pollPool = document.getElementById('viewPoolSelect').value;
+  var opts = '<option value="">Pick team</option>' +
+    data.map(function(t) {
+      return '<option value="' + escAttr(t.name) + '">' + escHtml(t.name) + '</option>';
+    }).join('');
+  var s1 = document.getElementById('pollTeam1');
+  var s2 = document.getElementById('pollTeam2');
+  if (s1) s1.innerHTML = opts;
+  if (s2) s2.innerHTML = opts;
+  document.getElementById('pollBtns').style.display = 'none';
+  document.getElementById('pollBars').style.display = 'none';
+  _pollVotedFor = null;
+  _pollVotes = {};
+  var section = document.getElementById('pollSection');
+  if (section) section.style.display = '';
+  // Load existing votes
+  google.script.run.withSuccessHandler(function(counts) {
+    _pollVotes = counts || {};
+  }).withFailureHandler(function() {}).getPollVotes(_pollPool);
+}
+
+window.ddcaUpdatePollBtns = function() {
+  var t1 = document.getElementById('pollTeam1').value;
+  var t2 = document.getElementById('pollTeam2').value;
+  if (!t1 || !t2 || t1 === t2) {
+    document.getElementById('pollBtns').style.display = 'none'; return;
+  }
+  var b1 = document.getElementById('pollBtn1');
+  var b2 = document.getElementById('pollBtn2');
+  b1.textContent = t1; b2.textContent = t2;
+  b1.className = 'poll-btn' + (_pollVotedFor === t1 ? ' voted' : '');
+  b2.className = 'poll-btn' + (_pollVotedFor === t2 ? ' voted' : '');
+  document.getElementById('pollBtns').style.display = 'flex';
+  if (_pollVotedFor) renderPollBars(t1, t2);
+};
+
+window.ddcaCastVote = function(idx) {
+  var t1 = document.getElementById('pollTeam1').value;
+  var t2 = document.getElementById('pollTeam2').value;
+  if (!t1 || !t2) return;
+  var voted = idx === 0 ? t1 : t2;
+  if (_pollVotedFor) return; // already voted
+  _pollVotedFor = voted;
+  _pollVotes[voted] = (_pollVotes[voted] || 0) + 1;
+  document.getElementById('pollBtn' + (idx + 1)).classList.add('voted');
+  renderPollBars(t1, t2);
+  google.script.run.withSuccessHandler(function(){}).withFailureHandler(function(){})
+    .savePollVote(_pollPool, voted);
+};
+
+function renderPollBars(t1, t2) {
+  var v1 = _pollVotes[t1] || 0;
+  var v2 = _pollVotes[t2] || 0;
+  var total = v1 + v2;
+  var p1 = total ? Math.round(v1 / total * 100) : 50;
+  var p2 = total ? Math.round(v2 / total * 100) : 50;
+  document.getElementById('pollBarName1').textContent = t1;
+  document.getElementById('pollBarName2').textContent = t2;
+  document.getElementById('pollBar1').style.width  = p1 + '%';
+  document.getElementById('pollBar2').style.width  = p2 + '%';
+  document.getElementById('pollPct1').textContent  = p1 + '%';
+  document.getElementById('pollPct2').textContent  = p2 + '%';
+  document.getElementById('pollVotesNote').textContent = total + ' vote' + (total !== 1 ? 's' : '') + ' total';
+  document.getElementById('pollBars').style.display = '';
+}
+
+// ─── 11. PATCH populatePools TO USE CACHE/LAZY APPROACH ──────────────────
+// Override the existing populatePools to trigger loadStandingsWithCache
+var _origPopulatePools = window.populatePools;
+// We patch it by listening to the first viewPoolSelect change after pools load
+// (the existing populatePools already dispatches 'change' which our new listener handles)
+
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     AI CHATBOT — Floating Bubble
+     ═══════════════════════════════════════════════════════════════════════ -->
+
+<!-- Floating Button -->
+<button id="ddca-chat-fab" title="Ask AI Cricket Assistant" onclick="ddcaToggleChat()">
+  <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
+  </svg>
+  <span id="ddca-chat-badge"></span>
+</button>
+
+<!-- Chat Window -->
+<div id="ddca-chat-window">
+
+  <!-- Header -->
+  <div id="ddca-chat-header">
+    <div class="ddca-avatar">🏏</div>
+    <div class="ddca-header-text">
+      <h4>DDCA AI Assistant</h4>
+      <div class="ddca-status">
+        <span class="ddca-status-dot"></span>
+        <span id="ddca-status-text">Live · Gemini 2.5 Flash</span>
+      </div>
+    </div>
+    <button id="ddca-clear-btn" onclick="ddcaClearChat()" title="Clear chat">↺ Clear</button>
+    <button id="ddca-expand-btn" onclick="ddcaToggleExpand()" title="Expand">⤢</button>
+    <button id="ddca-chat-close" onclick="ddcaToggleChat()" title="Close">✕</button>
+  </div>
+
+  <!-- Quick chips -->
+  <div id="ddca-suggestions">
+    <span class="ddca-chip" onclick="ddcaAsk('Who is leading I-Div Group A?')">🏆 Standings</span>
+    <span class="ddca-chip" onclick="ddcaAsk('Show latest match results')">📋 Results</span>
+    <span class="ddca-chip" onclick="ddcaAsk('Which team has the best NRR?')">📈 NRR</span>
+    <span class="ddca-chip" onclick="ddcaAsk('Predict who will win the next match based on current form')">🔮 Predict</span>
+    <span class="ddca-chip" onclick="ddcaAsk('Which teams can still qualify for the next round?')">🎯 Qualify</span>
+    <span class="ddca-chip" onclick="ddcaAsk('Suggest a batting strategy against a strong bowling attack')">💡 Strategy</span>
+  </div>
+
+  <!-- Messages (scroll-to-bottom btn sits inside) -->
+  <div id="ddca-chat-messages">
+    <button id="ddca-scroll-btn" onclick="ddcaScrollBottom(true)">↓ New messages</button>
+  </div>
+
+  <!-- Footer -->
+  <div id="ddca-chat-footer">
+    <div class="ddca-input-row">
+      <textarea
+        id="ddca-chat-input"
+        rows="1"
+        placeholder="Ask about standings, predictions, NRR…"
+        onkeydown="ddcaHandleKey(event)"
+        oninput="ddcaOnInput(this)"
+      ></textarea>
+      <button id="ddca-chat-send" onclick="ddcaSend()" title="Send (Enter)">
+        <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+    <div id="ddca-char-count"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var chatHistory = [];
+  var isOpen      = false;
+  var isExpanded  = false;
+  var isBusy      = false;
+  var unread      = 0;
+  var _userScrolled = false;
+
+  var win     = document.getElementById('ddca-chat-window');
+  var msgs    = document.getElementById('ddca-chat-messages');
+  var input   = document.getElementById('ddca-chat-input');
+  var sendBtn = document.getElementById('ddca-chat-send');
+  var badge   = document.getElementById('ddca-chat-badge');
+  var scrollBtn = document.getElementById('ddca-scroll-btn');
+
+  // ── Scroll-to-bottom detection ────────────────────────────────────────────
+  msgs.addEventListener('scroll', function () {
+    var atBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 60;
+    _userScrolled = !atBottom;
+    if (scrollBtn) {
+      if (atBottom) scrollBtn.classList.remove('visible');
+      else          scrollBtn.classList.add('visible');
+    }
+  });
+
+  // ── Public API ────────────────────────────────────────────────────────────
+  window.ddcaToggleChat = function () {
+    isOpen = !isOpen;
+    win.classList.toggle('ddca-open', isOpen);
+    if (isOpen) {
+      unread = 0; updateBadge();
+      setTimeout(function () { input.focus(); ddcaScrollBottom(false); }, 300);
+    }
+  };
+
+  window.ddcaToggleExpand = function () {
+    isExpanded = !isExpanded;
+    win.classList.toggle('ddca-expanded', isExpanded);
+    var btn = document.getElementById('ddca-expand-btn');
+    if (btn) btn.textContent = isExpanded ? '⤡' : '⤢';
+    ddcaScrollBottom(false);
+  };
+
+  window.ddcaClearChat = function () {
+    chatHistory = [];
+    // Remove all messages except the scroll button
+    Array.from(msgs.children).forEach(function(c) {
+      if (c.id !== 'ddca-scroll-btn' && c.id !== 'ddca-typing') msgs.removeChild(c);
+    });
+    addBotMsg('Chat cleared! How can I help you?', false);
+  };
+
+  window.ddcaAsk = function (text) { input.value = text; ddcaOnInput(input); ddcaSend(); };
+
+  window.ddcaHandleKey = function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ddcaSend(); }
+  };
+
+  window.ddcaOnInput = function (el) {
+    // Auto-resize
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    // Char counter
+    var len = el.value.length;
+    var cc = document.getElementById('ddca-char-count');
+    if (cc) {
+      if (len > 0) {
+        cc.textContent = len + '/2000';
+        cc.className = len > 1800 ? 'over' : len > 1500 ? 'warn' : 'visible';
+      } else {
+        cc.textContent = '';
+        cc.className = '';
+      }
+    }
+  };
+
+  window.ddcaScrollBottom = function (smooth) {
+    if (smooth) {
+      msgs.scrollTo({ top: msgs.scrollHeight, behavior: 'smooth' });
+    } else {
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+    _userScrolled = false;
+    if (scrollBtn) scrollBtn.classList.remove('visible');
+  };
+
+  window.ddcaSend = function () {
+    var text = input.value.trim();
+    if (!text || isBusy) return;
+    if (text.length > 2000) { alert('Message too long (max 2000 characters).'); return; }
+    input.value = '';
+    input.style.height = 'auto';
+    var cc = document.getElementById('ddca-char-count');
+    if (cc) { cc.textContent = ''; cc.className = ''; }
+    isBusy = true;
+    sendBtn.disabled = true;
+
+    addUserMsg(text);
+    chatHistory.push({ role: 'user', text: text });
+    setStatus('Thinking…', true);
+    showTyping(true);
+
+    var historyToSend = chatHistory.slice(-6);
+
+    google.script.run
+      .withSuccessHandler(function (reply) {
+        showTyping(false);
+        setStatus('Live · Gemini 2.5 Flash', false);
+        isBusy = false;
+        sendBtn.disabled = false;
+        var botText = reply || 'Sorry, I didn\'t get a response. Please try again.';
+        addBotMsg(botText, true);
+        chatHistory.push({ role: 'model', text: botText });
+        if (!isOpen) { unread++; updateBadge(); }
+        input.focus();
+      })
+      .withFailureHandler(function (err) {
+        showTyping(false);
+        setStatus('Live · Gemini 2.5 Flash', false);
+        isBusy = false;
+        sendBtn.disabled = false;
+        addBotMsg('⚠️ **Error:** ' + escH(err.message || 'Something went wrong. Please try again.'), false);
+        input.focus();
+      })
+      .getChatbotResponse(text, historyToSend);
+  };
+
+  // ── Copy to clipboard ─────────────────────────────────────────────────────
+  window.ddcaCopyMsg = function (btn, text) {
+    var doCopy = function (str) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(str);
+      }
+      var ta = document.createElement('textarea');
+      ta.value = str; ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand('copy'); } catch(e) {}
+      document.body.removeChild(ta);
+      return Promise.resolve();
+    };
+    doCopy(text).then(function () {
+      btn.textContent = '✓ Copied';
+      btn.classList.add('ddca-copied');
+      setTimeout(function () { btn.textContent = '⧉ Copy'; btn.classList.remove('ddca-copied'); }, 2200);
+    }).catch(function () {
+      btn.textContent = '✗'; setTimeout(function () { btn.textContent = '⧉ Copy'; }, 1500);
+    });
+  };
+
+  // ── Message builders ──────────────────────────────────────────────────────
+  function addUserMsg(text) {
+    var el = document.createElement('div');
+    el.className = 'ddca-msg ddca-user';
+    el.innerHTML = '<div class="ddca-bubble">' + escH(text) + '</div>'
+                 + '<div class="ddca-msg-actions"><span class="ddca-ts">' + nowStr() + '</span></div>';
+    msgs.insertBefore(el, scrollBtn);
+    ddcaScrollBottom(false);
+  }
+
+  function addBotMsg(text, showFollowups) {
+    var rawText = text;
+    var escaped = rawText.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n');
+    var actionsHtml = '<div class="ddca-msg-actions">'
+      + '<span class="ddca-ts">🏏 DDCA AI · ' + nowStr() + '</span>'
+      + '<button class="ddca-copy-btn" onclick="ddcaCopyMsg(this,\'' + escaped + '\')" title="Copy">⧉ Copy</button>'
+      + '</div>';
+
+    var followupHtml = '';
+    if (showFollowups) {
+      var chips = getFollowupChips(rawText);
+      if (chips.length) {
+        followupHtml = '<div class="ddca-followup">'
+          + chips.map(function (c) {
+              return '<span class="ddca-fu-chip" onclick="ddcaAsk(\'' + c.text.replace(/'/g,"\\'") + '\')">' + c.label + '</span>';
+            }).join('')
+          + '</div>';
+      }
+    }
+
+    var el = document.createElement('div');
+    el.className = 'ddca-msg ddca-bot';
+    el.innerHTML = '<div class="ddca-bubble">' + renderMd(rawText) + actionsHtml + '</div>' + followupHtml;
+    msgs.insertBefore(el, scrollBtn);
+
+    if (!_userScrolled) ddcaScrollBottom(false);
+    else if (scrollBtn) scrollBtn.classList.add('visible');
+  }
+
+  // ── Typing indicator ──────────────────────────────────────────────────────
+  function showTyping(show) {
+    var el = document.getElementById('ddca-typing');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'ddca-typing';
+      el.className = 'ddca-msg ddca-bot';
+      el.innerHTML = '<div class="ddca-bubble">'
+        + '<div class="ddca-dots"><span></span><span></span><span></span></div>'
+        + '<span class="ddca-typing-label">AI is thinking…</span>'
+        + '</div>';
+      msgs.insertBefore(el, scrollBtn);
+    }
+    el.style.display = show ? 'flex' : 'none';
+    if (show && !_userScrolled) ddcaScrollBottom(false);
+  }
+
+  // ── Status line ───────────────────────────────────────────────────────────
+  function setStatus(text, thinking) {
+    var el = document.getElementById('ddca-status-text');
+    if (!el) return;
+    el.textContent = text;
+    var dot = document.querySelector('.ddca-status-dot');
+    if (dot) dot.style.background = thinking ? '#fbbf24' : '#4ade80';
+  }
+
+  // ── Contextual follow-up chips ────────────────────────────────────────────
+  function getFollowupChips(text) {
+    var t = (text || '').toLowerCase();
+    if (/standing|points table|pool|group/.test(t)) return [
+      { label: '🏆 Qualify chances',  text: 'Which teams can still qualify?' },
+      { label: '📊 Compare NRR',      text: 'Compare NRR of all teams' },
+      { label: '❌ Eliminated teams', text: 'Which teams are eliminated?' }
+    ];
+    if (/nrr|net run rate/.test(t)) return [
+      { label: '🧮 How NRR works',  text: 'How is Net Run Rate calculated?' },
+      { label: '📋 All teams NRR', text: 'Show NRR for all teams' },
+      { label: '📈 Improve NRR',   text: 'How can a team improve their NRR?' }
+    ];
+    if (/predict|win|favourite|likely/.test(t)) return [
+      { label: '🏏 Batting tips',  text: 'Suggest a batting strategy for this match' },
+      { label: '🎯 Bowling tips',  text: 'What bowling strategy works best?' },
+      { label: '🪙 Toss impact',   text: 'How important is the toss in DDCA matches?' }
+    ];
+    if (/qualif|eliminat|scenario|must.win/.test(t)) return [
+      { label: '📅 Remaining matches', text: 'What matches are still to be played?' },
+      { label: '✅ Best case',         text: 'Best case qualification scenario' },
+      { label: '🔢 Points needed',     text: 'How many points does each team need?' }
+    ];
+    if (/strateg|batting|bowling|powerplay|death over|dls/.test(t)) return [
+      { label: '⚡ Powerplay tips', text: 'What is the best powerplay strategy?' },
+      { label: '💀 Death overs',    text: 'How to bowl in the death overs?' },
+      { label: '🌧️ DLS method',    text: 'Explain the DLS method' }
+    ];
+    if (/result|match|score|won|lost|beat/.test(t)) return [
+      { label: '📊 Latest standings', text: 'Show current standings' },
+      { label: '🏏 Top performers',   text: 'Who are the best performing teams so far?' },
+      { label: '🔮 Next match',       text: 'Predict the next match result' }
+    ];
+    return [
+      { label: '📊 Standings',   text: 'Show current league standings' },
+      { label: '🔮 Prediction',  text: 'Predict who will qualify for the next round' },
+      { label: '🏅 Best team',   text: 'Who is the best performing team so far?' }
+    ];
+  }
+
+  // ── Markdown renderer ─────────────────────────────────────────────────────
+  function renderMd(text) {
+    var lines = (text || '').split('\n');
+    var out = [];
+    var i = 0;
+    while (i < lines.length) {
+      var line = lines[i];
+      if (/^\s*\|/.test(line)) {
+        var tbl = [];
+        while (i < lines.length && /^\s*\|/.test(lines[i])) { tbl.push(lines[i]); i++; }
+        out.push(buildTable(tbl)); continue;
+      }
+      var h2m = line.match(/^##\s+(.*)/);
+      var h3m = line.match(/^###\s+(.*)/);
+      if (h3m) { out.push('<div class="ddca-h3">' + inlineMd(h3m[1]) + '</div>'); i++; continue; }
+      if (h2m) { out.push('<div class="ddca-h2">' + inlineMd(h2m[1]) + '</div>'); i++; continue; }
+      if (/^\d+\.\s/.test(line)) {
+        var ol = [];
+        while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
+          ol.push('<li>' + inlineMd(lines[i].replace(/^\d+\.\s+/, '')) + '</li>'); i++;
+        }
+        out.push('<ol style="margin:6px 0 6px 18px;padding:0;">' + ol.join('') + '</ol>'); continue;
+      }
+      if (/^[•\-\*]\s/.test(line)) {
+        var ul = [];
+        while (i < lines.length && /^[•\-\*]\s/.test(lines[i])) {
+          ul.push('<li>' + inlineMd(lines[i].replace(/^[•\-\*]\s+/, '')) + '</li>'); i++;
+        }
+        out.push('<ul style="margin:6px 0 6px 18px;padding:0;">' + ul.join('') + '</ul>'); continue;
+      }
+      if (line.trim() === '') { out.push('<br>'); i++; continue; }
+      out.push('<span>' + inlineMd(line) + '</span><br>');
+      i++;
+    }
+    return out.join('')
+      .replace(/(<br>){3,}/g, '<br><br>')
+      .replace(/<br>(<\/?(div|ol|ul|table)[^>]*>)/g, '$1')
+      .replace(/(<\/?(div|ol|ul|table)[^>]*>)<br>/g, '$1');
+  }
+
+  function inlineMd(str) {
+    var s = escH(str);
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    s = s.replace(/__(.+?)__/g, '<strong>$1</strong>');
+    s = s.replace(/_(.+?)_/g, '<em>$1</em>');
+    return s;
+  }
+
+  function buildTable(tableLines) {
+    var rows = tableLines.map(function (l) {
+      return l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(function (c) { return c.trim(); });
+    });
+    var dataRows = rows.filter(function (r) { return !/^[-:\s]+$/.test(r.join('')); });
+    if (!dataRows.length) return '';
+    var html = '<div class="ddca-table-wrap"><table class="ddca-table"><thead><tr>'
+      + dataRows[0].map(function (h) { return '<th>' + inlineMd(h) + '</th>'; }).join('')
+      + '</tr></thead><tbody>';
+    dataRows.slice(1).forEach(function (r) {
+      html += '<tr>' + r.map(function (c) { return '<td>' + inlineMd(c) + '</td>'; }).join('') + '</tr>';
+    });
+    return html + '</tbody></table></div>';
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function updateBadge() {
+    badge.textContent = unread;
+    badge.style.display = unread > 0 ? 'flex' : 'none';
+  }
+
+  function nowStr() { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+
+  function escH(str) {
+    return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Init ────────────────────────────────────────────────────────────────
+  // Placed AFTER all window.xxx assignments so ddcaScrollBottom is defined
+  addBotMsg('👋 Hi! I\'m your **DDCA League AI** assistant.\n\nI have live access to **standings**, **match results**, **NRR tables**, and all pool data.\n\nAsk me anything — standings, predictions, strategies, or cricket rules!', false);
+  setTimeout(function () { if (!isOpen) { unread = 1; updateBadge(); } }, 3000);
+
+})();
+</script>
+
+</body>
+</html>
