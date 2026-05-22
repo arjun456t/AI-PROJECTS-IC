@@ -252,7 +252,7 @@ function processData(poolName) {
     const locRateAg = (t.ovAg * safeWkAg) === 0 ? 0 : (t.runsAg / (t.ovAg * safeWkAg));
     const nrrDDCA = locRateFor - locRateAg;
 
-    return { ...t, nrrICC: nrrICC.toFixed(3), nrrDDCA: parseFloat(nrrDDCA.toFixed(4)) };
+    return { ...t, nrrICC: nrrICC.toFixed(3), nrrDDCA: parseFloat(nrrDDCA.toFixed(4)), isSuperLeague: t.p > allTeams.length };
   });
 
   finalTable.sort(function(a, b) {
@@ -264,7 +264,8 @@ function processData(poolName) {
   return {
     table: finalTable,
     matrix: matrix,
-    sortedTeams: finalTable.map(function(t) { return t.name; })
+    sortedTeams: finalTable.map(function(t) { return t.name; }),
+    totalTeams: allTeams.length
   };
 }
 
@@ -563,19 +564,22 @@ function getSuperLeague(topN) {
 
     groupPools.forEach(function(pool) {
       var standings = getStandings(pool);
-      standings.slice(0, topN).forEach(function(team, idx) {
-        qualifiedTeams.push({
-          name:       team.name,
-          sourcePool: pool,
-          groupRank:  idx + 1,
-          p:          team.p,
-          w:          team.w,
-          l:          team.l,
-          t:          team.t,
-          pts:        team.pts,
-          nrrICC:     team.nrrICC,
-          nrrDDCA:    team.nrrDDCA
-        });
+      standings.forEach(function(team, idx) {
+        if (idx < topN || team.isSuperLeague) {
+          qualifiedTeams.push({
+            name:          team.name,
+            sourcePool:    pool,
+            groupRank:     idx + 1,
+            p:             team.p,
+            w:             team.w,
+            l:             team.l,
+            t:             team.t,
+            pts:           team.pts,
+            nrrICC:        team.nrrICC,
+            nrrDDCA:       team.nrrDDCA,
+            isSuperLeague: team.isSuperLeague
+          });
+        }
       });
     });
 

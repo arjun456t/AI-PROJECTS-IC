@@ -697,14 +697,15 @@
           <thead class="table-dark">
             <tr>
               <th>Team</th><th>P</th><th>W</th><th>L</th><th>Pts</th>
+              <th title="Super League participant">SL</th>
               <th class="d-none d-sm-table-cell" title="Standard NRR">NRR (ICC)</th>
               <th title="Local: Runs / (Overs * Wkts)">NRR (DDCA)</th>
             </tr>
           </thead>
           <tbody id="standingsBody">
-            <tr><td colspan="7"><div class="skel" style="width:80%;height:12px;margin:8px auto;"></div></td></tr>
-            <tr><td colspan="7"><div class="skel" style="width:65%;height:12px;margin:8px auto;"></div></td></tr>
-            <tr><td colspan="7"><div class="skel" style="width:72%;height:12px;margin:8px auto;"></div></td></tr>
+            <tr><td colspan="8"><div class="skel" style="width:80%;height:12px;margin:8px auto;"></div></td></tr>
+            <tr><td colspan="8"><div class="skel" style="width:65%;height:12px;margin:8px auto;"></div></td></tr>
+            <tr><td colspan="8"><div class="skel" style="width:72%;height:12px;margin:8px auto;"></div></td></tr>
           </tbody>
         </table>
       </div>
@@ -2458,7 +2459,7 @@ function showStandingsSkeleton() {
   if (tbody) {
     var rows = '';
     for (var i = 0; i < 5; i++) {
-      rows += '<tr>' + Array(7).fill('<td><div class="skel" style="height:11px;width:' + (50 + Math.random()*35|0) + '%;margin:0 auto;"></div></td>').join('') + '</tr>';
+      rows += '<tr>' + Array(8).fill('<td><div class="skel" style="height:11px;width:' + (50 + Math.random()*35|0) + '%;margin:0 auto;"></div></td>').join('') + '</tr>';
     }
     tbody.innerHTML = rows;
   }
@@ -2489,7 +2490,7 @@ function loadStandingsWithCache(pool) {
       document.getElementById('viewLoader').style.display = 'none';
       hideStandingsSkeleton();
       document.getElementById('standingsBody').innerHTML =
-        '<tr><td colspan="7" class="text-danger">Error: ' + escHtml(err.message) + '</td></tr>';
+        '<tr><td colspan="8" class="text-danger">Error: ' + escHtml(err.message) + '</td></tr>';
     })
     .getStandings(pool);
 }
@@ -2673,7 +2674,7 @@ function renderSuperLeague(divisions) {
       html += '<table class="table table-sm table-bordered text-center align-middle mb-0">';
       html += '<thead class="table-secondary"><tr>';
       html += '<th>#</th><th class="text-start">Team</th><th>From Group</th>';
-      html += '<th>P</th><th>W</th><th>L</th><th>Pts</th><th>NRR (DDCA)</th>';
+      html += '<th>P</th><th>W</th><th>L</th><th>Pts</th><th>NRR (DDCA)</th><th>SL</th>';
       html += '</tr></thead><tbody>';
       div.qualifiedTeams.forEach(function(team, idx) {
         html += '<tr>';
@@ -2686,6 +2687,7 @@ function renderSuperLeague(divisions) {
         html += '<td>' + team.l + '</td>';
         html += '<td><strong>' + team.pts + '</strong></td>';
         html += '<td>' + team.nrrDDCA + '</td>';
+        html += '<td>' + (team.isSuperLeague ? '<span class="badge bg-warning text-dark" style="font-size:0.6rem;">SL</span>' : '') + '</td>';
         html += '</tr>';
       });
       html += '</tbody></table></div>';
@@ -2723,13 +2725,15 @@ function renderStandingsAnimated(data) {
   // Desktop table
   var tbody = document.getElementById('standingsBody');
   if (data.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7">No matches.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8">No matches.</td></tr>';
   } else {
     tbody.innerHTML = data.map(function(t, i) {
+      var slBadge = t.isSuperLeague ? '<span class="badge bg-warning text-dark" style="font-size:0.6rem;">SL</span>' : '';
       return '<tr class="' + (i < 2 ? 'qualifier-row' : '') + '">' +
         '<td class="fw-bold text-start">' + escHtml(t.name) + '</td>' +
         '<td>' + t.p + '</td><td>' + t.w + '</td><td>' + t.l + '</td>' +
         '<td class="fw-bold" data-animate-pts="' + t.pts + '">' + t.pts + '</td>' +
+        '<td class="text-center">' + slBadge + '</td>' +
         '<td class="small text-secondary d-none d-sm-table-cell">' +
           t.nrrICC +
           '<span class="nrr-info-icon text-primary" data-team="' + escAttr(t.name) + '" data-type="icc">ⓘ</span>' +
@@ -2762,10 +2766,11 @@ function renderStandingsAnimated(data) {
           var isQ = i < 2;
           var rankCls = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : '';
           var nrrSign = t.nrrDDCA >= 0 ? '+' : '';
+          var slChip = t.isSuperLeague ? '<span class="qual-chip" style="background:#f59e0b;">SL</span>' : '';
           return '<div class="standing-card ' + (isQ ? 'qualifier' : '') + ' ' + rankCls + '">' +
             '<div class="rank-badge">' + (i + 1) + '</div>' +
             '<div class="standing-info">' +
-              '<div class="standing-name">' + escHtml(t.name.trim()) + (isQ ? '<span class="qual-chip">Q</span>' : '') + '</div>' +
+              '<div class="standing-name">' + escHtml(t.name.trim()) + (isQ ? '<span class="qual-chip">Q</span>' : '') + slChip + '</div>' +
               '<div class="standing-meta">P ' + t.p + ' &nbsp;·&nbsp; W ' + t.w + ' &nbsp;·&nbsp; L ' + t.l + '</div>' +
               '<div class="standing-nrr">NRR ' + nrrSign + t.nrrDDCA.toFixed(3) + '</div>' +
             '</div>' +
