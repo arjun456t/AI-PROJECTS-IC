@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Solo Leveling System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --cyan: #00b4ff;
+      --cyan-glow: rgba(0,180,255,0.55);
+      --purple: #7b2ff7;
+      --purple-glow: rgba(123,47,247,0.55);
+      --bg: #05070d;
+      --bg2: #0a0e1a;
+      --panel: rgba(15,22,40,0.55);
+      --border: rgba(0,180,255,0.35);
+      --danger: #ff2d55;
+      --gold: #ffd166;
+      --green: #2dffa3;
+      --text: #d9ecff;
+      --text-dim: #7f92b3;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0; background: var(--bg); color: var(--text);
+      font-family: 'Rajdhani', sans-serif; font-size: 16px; overflow-x: hidden;
+      height: 100%; width: 100%;
+    }
+    h1,h2,h3,h4, .orbitron { font-family: 'Orbitron', sans-serif; }
+    button, input, select, textarea { font-family: 'Rajdhani', sans-serif; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-thumb { background: var(--cyan-glow); border-radius: 4px; }
+
+    body {
+      background:
+        radial-gradient(ellipse at 20% -10%, rgba(123,47,247,0.18), transparent 55%),
+        radial-gradient(ellipse at 90% 10%, rgba(0,180,255,0.15), transparent 50%),
+        linear-gradient(180deg, #05070d 0%, #050810 100%);
+      min-height: 100vh;
+    }
+
+    #app { max-width: 480px; margin: 0 auto; min-height: 100vh; position: relative; padding-bottom: 84px; }
+
+    /* Scanline overlay */
+    #scanline {
+      position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+      background: repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 1px, transparent 2px, transparent 3px);
+      mix-blend-mode: overlay; opacity: 0.5;
+      animation: scanmove 6s linear infinite;
+    }
+    @keyframes scanmove { 0% { background-position-y: 0; } 100% { background-position-y: 200px; } }
+
+    /* Topbar */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 16px 10px; position: sticky; top: 0; z-index: 50;
+      background: linear-gradient(180deg, rgba(5,7,13,0.96), rgba(5,7,13,0.75));
+      backdrop-filter: blur(6px); border-bottom: 1px solid rgba(0,180,255,0.2);
+    }
+    .topbar .brand { font-family:'Orbitron',sans-serif; font-weight:700; font-size:15px; letter-spacing:2px; color: var(--cyan); text-shadow: 0 0 12px var(--cyan-glow); }
+    .topbar .brand small { display:block; font-family:'Rajdhani',sans-serif; font-size:10px; letter-spacing:3px; color: var(--text-dim); font-weight:500; }
+    .topbar .lvl-chip {
+      font-family:'Orbitron',sans-serif; font-size:12px; font-weight:700; color:#000;
+      background: linear-gradient(135deg, var(--cyan), var(--purple)); padding:6px 12px;
+      clip-path: polygon(8px 0,100% 0,100% 100%,0 100%,0 8px); box-shadow: 0 0 14px var(--cyan-glow);
+    }
+
+    /* Glass angular panel */
+    .panel {
+      background: var(--panel); border: 1px solid var(--border);
+      clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+      padding: 16px; margin: 12px 14px; position: relative; backdrop-filter: blur(8px);
+      box-shadow: 0 0 0 1px rgba(0,180,255,0.05) inset, 0 4px 24px rgba(0,0,0,0.35);
+    }
+    .panel::before {
+      content:''; position:absolute; top:0; left:0; width:22px; height:2px; background: var(--cyan); box-shadow: 0 0 8px var(--cyan-glow);
+    }
+    .panel-title { font-family:'Orbitron',sans-serif; font-size:12px; letter-spacing:2px; color: var(--cyan); margin: 0 0 12px; text-transform: uppercase; }
+
+    .views { padding-top: 4px; }
+    .view { display: none; animation: fadein .25s ease; }
+    .view.active { display: block; }
+    @keyframes fadein { from { opacity:0; transform: translateY(6px);} to {opacity:1; transform:translateY(0);} }
+
+    /* Bottom nav */
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+      width: 100%; max-width: 480px; display: flex; z-index: 100;
+      background: rgba(8,11,20,0.92); backdrop-filter: blur(10px);
+      border-top: 1px solid rgba(0,180,255,0.25); padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    }
+    .nav-btn {
+      flex: 1; background: none; border: none; color: var(--text-dim); font-size: 10px;
+      display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px;
+      letter-spacing: 0.5px; font-weight: 600; text-transform: uppercase;
+    }
+    .nav-btn .ic { font-size: 19px; }
+    .nav-btn.active { color: var(--cyan); text-shadow: 0 0 10px var(--cyan-glow); }
+    .nav-btn.active .ic { filter: drop-shadow(0 0 6px var(--cyan-glow)); }
+
+    /* Player status */
+    .player-head { display:flex; align-items:center; gap:12px; margin-bottom: 14px; }
+    .player-avatar {
+      width: 56px; height: 56px; flex-shrink:0; border-radius: 4px;
+      background: conic-gradient(from 180deg, var(--cyan), var(--purple), var(--cyan));
+      display:flex; align-items:center; justify-content:center; font-family:'Orbitron'; font-weight:900; font-size:20px; color:#05070d;
+      box-shadow: 0 0 18px var(--cyan-glow);
+    }
+    .player-name { font-family:'Orbitron'; font-size:17px; font-weight:700; color:#fff; }
+    .player-title { font-size: 12px; color: var(--purple); letter-spacing:1px; text-transform: uppercase; font-weight:700; text-shadow:0 0 8px var(--purple-glow); }
+
+    .bar-row { margin-bottom: 10px; }
+    .bar-label { display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim); letter-spacing:1px; margin-bottom:4px; text-transform:uppercase; font-weight:600; }
+    .bar-track { height: 10px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); clip-path: polygon(5px 0,100% 0,100% 100%,0 100%,0 5px); overflow:hidden; }
+    .bar-fill { height: 100%; transition: width .5s cubic-bezier(.2,.8,.3,1); }
+    .bar-fill.hp { background: linear-gradient(90deg,#ff2d55,#ff7a5c); box-shadow:0 0 10px rgba(255,45,85,0.7); }
+    .bar-fill.mp { background: linear-gradient(90deg,#0084ff,#00e0ff); box-shadow:0 0 10px rgba(0,180,255,0.7); }
+    .bar-fill.xp { background: linear-gradient(90deg,var(--purple),var(--cyan)); box-shadow:0 0 10px var(--purple-glow); }
+
+    .stat-row { display:flex; align-items:center; gap:10px; margin-bottom:9px; }
+    .stat-tag { width:38px; font-family:'Orbitron'; font-size:11px; color:var(--cyan); flex-shrink:0; }
+    .stat-track { flex:1; height:7px; background:rgba(255,255,255,0.06); clip-path: polygon(4px 0,100% 0,100% 100%,0 100%,0 4px); overflow:hidden; }
+    .stat-fill { height:100%; background: linear-gradient(90deg,var(--cyan),var(--purple)); }
+    .stat-val { width:26px; text-align:right; font-size:12px; font-weight:700; color:#fff; }
+
+    .mini-stats { display:flex; gap:8px; margin-top: 4px; }
+    .mini-stat { flex:1; text-align:center; padding:8px 4px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); }
+    .mini-stat .n { font-family:'Orbitron'; font-size:16px; color:var(--cyan); font-weight:700; }
+    .mini-stat .l { font-size:9px; color:var(--text-dim); letter-spacing:1px; text-transform:uppercase; }
+
+    .badge-grid { display:grid; grid-template-columns: repeat(5,1fr); gap:8px; margin-top:6px; }
+    .badge { text-align:center; padding:8px 2px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); cursor:pointer; }
+    .badge .bi { font-size:20px; filter: grayscale(1) opacity(0.35); }
+    .badge.unlocked { border-color: rgba(255,209,102,0.5); box-shadow:0 0 10px rgba(255,209,102,0.25); }
+    .badge.unlocked .bi { filter:none; }
+    .badge .bn { font-size:8px; color:var(--text-dim); margin-top:3px; letter-spacing:0.3px; }
+    .badge.unlocked .bn { color: var(--gold); }
+    .badge-desc { font-size:11px; color: var(--text-dim); margin-top:8px; text-align:center; min-height:14px; }
+
+    /* Buttons */
+    .btn {
+      font-family:'Orbitron',sans-serif; font-size:12px; font-weight:700; letter-spacing:1.5px;
+      color:#00121f; background: linear-gradient(135deg,var(--cyan),#5fd8ff); border:none; padding:11px 16px;
+      clip-path: polygon(10px 0,100% 0,100% 100%,0 100%,0 10px); text-transform:uppercase;
+      box-shadow: 0 0 16px var(--cyan-glow); width:100%;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn.secondary { background: rgba(255,255,255,0.06); color: var(--text); border:1px solid var(--border); box-shadow:none; }
+    .btn.purple { background: linear-gradient(135deg,var(--purple),#b06dff); box-shadow:0 0 16px var(--purple-glow); color:#0a0014; }
+    .btn.danger { background: linear-gradient(135deg,var(--danger),#ff7a5c); box-shadow:0 0 16px rgba(255,45,85,0.55); color:#1a0000; }
+    .btn.small { width:auto; padding:7px 12px; font-size:10px; }
+    .btn-row { display:flex; gap:8px; }
+    .btn[disabled] { opacity: 0.4; }
+    .icon-btn { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color: var(--text-dim); width:32px; height:32px; display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0; }
+
+    input[type=text], input[type=number], input[type=date], select, textarea {
+      width:100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(0,180,255,0.25); color:#fff;
+      padding: 10px 12px; font-size: 14px; margin-bottom: 10px; clip-path: polygon(6px 0,100% 0,100% 100%,0 100%,0 6px);
+    }
+    textarea { resize: vertical; min-height: 54px; }
+    label.f-label { font-size: 10px; letter-spacing:1px; color: var(--text-dim); text-transform:uppercase; display:block; margin-bottom:4px; }
+    ::placeholder { color: rgba(255,255,255,0.3); }
+
+    /* inner tabs */
+    .inner-tabs { display:flex; gap:6px; margin: 0 14px 8px; }
+    .inner-tab-btn {
+      flex:1; background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); color: var(--text-dim);
+      padding: 9px 4px; font-size:11px; letter-spacing:1px; text-transform:uppercase; font-weight:700; font-family:'Orbitron';
+    }
+    .inner-tab-btn.active { color:#001018; background: linear-gradient(135deg,var(--cyan),var(--purple)); border-color: transparent; box-shadow:0 0 12px var(--cyan-glow); }
+    .inner-view { display:none; }
+    .inner-view.active { display:block; }
+
+    /* Quest cards */
+    .quest-card { background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-left: 3px solid var(--cyan); padding: 12px; margin-bottom: 10px; clip-path: polygon(8px 0,100% 0,100% 100%,0 100%,0 8px); }
+    .quest-card.done { border-left-color: var(--green); opacity: 0.55; }
+    .quest-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+    .quest-title { font-weight:700; font-size:14.5px; color:#fff; }
+    .quest-meta { font-size:11px; color: var(--text-dim); margin-top:3px; }
+    .rank-chip { font-family:'Orbitron'; font-size:10px; font-weight:700; padding:3px 7px; flex-shrink:0; }
+    .rank-E { background: rgba(150,150,150,0.25); color:#ccc; }
+    .rank-D { background: rgba(80,200,120,0.2); color:#7CFFA0; }
+    .rank-C { background: rgba(0,180,255,0.2); color: var(--cyan); }
+    .rank-B { background: rgba(123,47,247,0.2); color:#c79bff; }
+    .rank-A { background: rgba(255,209,102,0.2); color: var(--gold); }
+    .rank-S { background: rgba(255,45,85,0.25); color:#ff9fb3; }
+    .quest-actions { display:flex; gap:6px; margin-top:10px; }
+    .streak-flame { color:#ff9f43; font-size:12px; }
+    .quest-desc { font-size: 12px; color: var(--text-dim); margin-top:6px; }
+
+    /* Dungeon */
+    .dungeon-select { display:flex; gap:10px; margin-bottom:14px; }
+    .dur-btn { flex:1; padding:16px 8px; text-align:center; background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); }
+    .dur-btn .n { font-family:'Orbitron'; font-size:22px; color:#fff; }
+    .dur-btn .l { font-size:10px; color:var(--text-dim); letter-spacing:1px; }
+    .dur-btn.selected { border-color: var(--cyan); box-shadow: 0 0 14px var(--cyan-glow); }
+    .dur-btn.selected .n { color: var(--cyan); }
+
+    #gate-overlay, #timer-overlay, #levelup-overlay, #briefing-overlay {
+      position: fixed; inset:0; z-index: 500; display:none; align-items:center; justify-content:center; flex-direction:column;
+      background: radial-gradient(ellipse at center, rgba(15,10,30,0.97), rgba(2,2,6,0.99));
+      text-align:center; padding: 24px;
+    }
+    .gate-text { font-family:'Orbitron'; font-size: 26px; letter-spacing:4px; color: var(--purple); text-shadow: 0 0 24px var(--purple-glow); animation: glowpulse 1s ease-in-out infinite; }
+    @keyframes glowpulse { 0%,100%{ opacity:1; text-shadow:0 0 24px var(--purple-glow);} 50%{ opacity:0.6; text-shadow:0 0 44px var(--purple-glow);} }
+    .gate-door { width: 200px; height: 200px; margin: 24px 0; position:relative; }
+    .gate-half { position:absolute; top:0; width:50%; height:100%; background: linear-gradient(135deg,#0a0e1a,#1a0a2e); border:1px solid var(--purple); box-shadow: 0 0 40px var(--purple-glow) inset; transition: transform 1.4s cubic-bezier(.7,0,.3,1); }
+    .gate-half.left { left:0; transform-origin:left; }
+    .gate-half.right { right:0; transform-origin:right; }
+    .gate-open .left { transform: rotateY(-100deg); }
+    .gate-open .right { transform: rotateY(100deg); }
+
+    .timer-num { font-family:'Orbitron'; font-size:56px; font-weight:900; color:#fff; text-shadow: 0 0 30px var(--cyan-glow); letter-spacing:2px; }
+    .timer-sub { font-size:13px; color: var(--text-dim); letter-spacing:2px; text-transform:uppercase; margin-top:6px;}
+    .timer-ring { width:220px; height:220px; margin:22px auto; }
+
+    /* People */
+    .person-card { background: rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); padding:12px 14px; margin-bottom:10px; clip-path: polygon(8px 0,100% 0,100% 100%,0 100%,0 8px); }
+    .person-head { display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
+    .person-name { font-weight:700; font-size:15px; color:#fff; }
+    .person-rel { font-size:11px; color: var(--cyan); text-transform:uppercase; letter-spacing:1px; }
+    .person-detail { display:none; margin-top:10px; padding-top:10px; border-top: 1px solid rgba(0,180,255,0.15); }
+    .person-detail.open { display:block; }
+    .person-detail .row { margin-bottom:8px; }
+    .person-detail .k { font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; }
+    .person-detail .v { font-size:13.5px; color:#eaf4ff; }
+
+    /* Chat */
+    #chat-log { display:flex; flex-direction:column; gap:10px; padding: 4px 2px 12px; max-height: calc(100vh - 300px); overflow-y:auto; }
+    .msg { max-width: 84%; padding: 10px 13px; font-size: 14px; line-height:1.4; }
+    .msg.user { align-self:flex-end; background: linear-gradient(135deg,rgba(0,180,255,0.22),rgba(0,180,255,0.08)); border:1px solid var(--border); clip-path: polygon(8px 0,100% 0,100% 100%,0 100%,0 8px); }
+    .msg.system { align-self:flex-start; background: linear-gradient(135deg,rgba(123,47,247,0.2),rgba(123,47,247,0.06)); border:1px solid rgba(123,47,247,0.4); clip-path: polygon(0 0,100% 0,100% 100%,8px 100%,0 calc(100% - 8px)); }
+    .chat-input-row { display:flex; gap:6px; align-items:flex-end; position:sticky; bottom:0; background: var(--bg); padding-top:6px; }
+    .chat-input-row input { margin-bottom:0; flex:1; }
+    .mic-btn.listening { color: var(--danger); box-shadow:0 0 14px rgba(255,45,85,0.6); }
+
+    /* System popup */
+    #popup-stack { position: fixed; top: 66px; left:50%; transform:translateX(-50%); width: 92%; max-width: 440px; z-index: 800; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+    .sys-popup {
+      pointer-events:all; background: rgba(8,12,24,0.92); border:1px solid var(--cyan); border-left:4px solid var(--cyan);
+      padding: 12px 14px; font-size: 13.5px; color:#eaf6ff; box-shadow: 0 0 24px var(--cyan-glow), 0 4px 18px rgba(0,0,0,0.5);
+      animation: slidein .35s cubic-bezier(.2,.9,.3,1.2); clip-path: polygon(10px 0,100% 0,100% 100%,0 100%,0 10px);
+    }
+    .sys-popup.penalty { border-color: var(--danger); box-shadow: 0 0 26px rgba(255,45,85,0.6); animation: slidein .35s ease, redpulse 0.8s ease-in-out infinite; }
+    .sys-popup.achievement { border-color: var(--gold); box-shadow: 0 0 26px rgba(255,209,102,0.55); }
+    @keyframes slidein { from { opacity:0; transform: translateY(-16px) scale(0.97);} to {opacity:1; transform:translateY(0) scale(1);} }
+    @keyframes redpulse { 0%,100%{ box-shadow:0 0 16px rgba(255,45,85,0.5);} 50%{ box-shadow:0 0 34px rgba(255,45,85,0.9);} }
+
+    /* Level up */
+    .levelup-title { font-family:'Orbitron'; font-size: 40px; font-weight:900; letter-spacing:4px; background: linear-gradient(90deg,var(--cyan),var(--purple)); -webkit-background-clip:text; background-clip:text; color:transparent; text-shadow: 0 0 40px var(--cyan-glow); animation: lvlpop .6s cubic-bezier(.2,1.4,.4,1); }
+    @keyframes lvlpop { 0%{ transform: scale(0.3); opacity:0;} 60%{ transform:scale(1.15); opacity:1;} 100%{ transform:scale(1);} }
+    .levelup-num { font-family:'Orbitron'; font-size:64px; font-weight:900; color:#fff; margin-top:10px; text-shadow:0 0 30px var(--purple-glow); }
+    .particles { position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+    .particle { position:absolute; width:4px; height:4px; background: var(--cyan); border-radius:50%; box-shadow: 0 0 8px var(--cyan); animation: rise 1.6s ease-out forwards; }
+    @keyframes rise { 0%{ transform:translateY(0) scale(1); opacity:1;} 100%{ transform: translateY(-260px) scale(0.2); opacity:0;} }
+
+    /* Briefing */
+    .briefing-card { max-width: 360px; }
+    .briefing-card h2 { font-size:20px; letter-spacing:2px; color: var(--cyan); text-shadow:0 0 16px var(--cyan-glow); margin-bottom:14px;}
+    .briefing-stats { display:flex; gap:10px; margin: 14px 0; }
+    .briefing-stat { flex:1; background: rgba(255,255,255,0.05); padding:10px; border:1px solid rgba(255,255,255,0.1);}
+    .briefing-stat .n { font-family:'Orbitron'; font-size:22px; color:var(--cyan); }
+    .briefing-stat .l { font-size:9px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px;}
+    .briefing-msg { font-size: 13.5px; color: var(--text-dim); font-style:italic; margin: 10px 0 18px; line-height:1.5; }
+
+    /* Loading */
+    #loading-overlay { position: fixed; inset:0; background: rgba(3,4,9,0.75); z-index: 900; display:none; align-items:center; justify-content:center; flex-direction:column; backdrop-filter: blur(2px); }
+    .loader-ring { width:52px; height:52px; border:3px solid rgba(0,180,255,0.15); border-top-color: var(--cyan); border-radius:50%; animation: spin 0.8s linear infinite; box-shadow: 0 0 20px var(--cyan-glow); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loader-text { font-family:'Orbitron'; font-size:11px; letter-spacing:3px; color: var(--cyan); margin-top:14px; }
+
+    .empty-state { text-align:center; padding: 24px 10px; color: var(--text-dim); font-size:13px; }
+    .section-gap { height: 6px; }
+    .fade-hidden { display:none !important; }
+  </style>
+</head>
+<body>
+<div id="scanline"></div>
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand">SOLO LEVELING<small>THE SYSTEM</small></div>
+    <div class="lvl-chip" id="topbar-level">LV. 1</div>
+  </div>
+
+  <div class="views">
+
+    <!-- STATUS VIEW -->
+    <section id="view-status" class="view active">
+      <div class="panel">
+        <div class="player-head">
+          <div class="player-avatar" id="avatar-initial">H</div>
+          <div>
+            <div class="player-name" id="status-name">Player</div>
+            <div class="player-title" id="status-title">E-Rank Hunter</div>
+          </div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label"><span>HP</span><span id="hp-text">100/100</span></div>
+          <div class="bar-track"><div class="bar-fill hp" id="hp-bar" style="width:100%"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label"><span>MP</span><span id="mp-text">50/50</span></div>
+          <div class="bar-track"><div class="bar-fill mp" id="mp-bar" style="width:100%"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label"><span>XP</span><span id="xp-text">0/100</span></div>
+          <div class="bar-track"><div class="bar-fill xp" id="xp-bar" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Hunter Stats</div>
+        <div class="stat-row"><div class="stat-tag">STR</div><div class="stat-track"><div class="stat-fill" id="stat-strength" style="width:1%"></div></div><div class="stat-val" id="val-strength">1</div></div>
+        <div class="stat-row"><div class="stat-tag">INT</div><div class="stat-track"><div class="stat-fill" id="stat-intelligence" style="width:1%"></div></div><div class="stat-val" id="val-intelligence">1</div></div>
+        <div class="stat-row"><div class="stat-tag">AGI</div><div class="stat-track"><div class="stat-fill" id="stat-agility" style="width:1%"></div></div><div class="stat-val" id="val-agility">1</div></div>
+        <div class="stat-row"><div class="stat-tag">VIT</div><div class="stat-track"><div class="stat-fill" id="stat-vitality" style="width:1%"></div></div><div class="stat-val" id="val-vitality">1</div></div>
+        <div class="stat-row"><div class="stat-tag">SEN</div><div class="stat-track"><div class="stat-fill" id="stat-sense" style="width:1%"></div></div><div class="stat-val" id="val-sense">1</div></div>
+        <div class="mini-stats">
+          <div class="mini-stat"><div class="n" id="mini-quests">0</div><div class="l">Quests</div></div>
+          <div class="mini-stat"><div class="n" id="mini-streak">0</div><div class="l">Streak</div></div>
+          <div class="mini-stat"><div class="n" id="mini-dungeons">0</div><div class="l">Raids</div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Achievements</div>
+        <div class="badge-grid" id="badge-grid"></div>
+        <div class="badge-desc" id="badge-desc">Tap a badge for details</div>
+      </div>
+    </section>
+
+    <!-- QUESTS VIEW -->
+    <section id="view-quests" class="view">
+      <div class="inner-tabs">
+        <button class="inner-tab-btn active" data-inner="daily" onclick="switchInner('quests','daily')">Daily Quests</button>
+        <button class="inner-tab-btn" data-inner="log" onclick="switchInner('quests','log')">Quest Log</button>
+      </div>
+
+      <div id="inner-quests-daily" class="inner-view active">
+        <div class="panel">
+          <div class="panel-title">Today's Duties</div>
+          <div id="daily-quest-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title" id="dq-form-title">Add Daily Quest</div>
+          <input type="hidden" id="dq-edit-id">
+          <label class="f-label">Title</label>
+          <input type="text" id="dq-title" placeholder="e.g. Read 20 pages">
+          <label class="f-label">Stat Boosted</label>
+          <select id="dq-stat">
+            <option value="Strength">Strength</option>
+            <option value="Intelligence">Intelligence</option>
+            <option value="Agility">Agility</option>
+            <option value="Vitality">Vitality</option>
+            <option value="Sense">Sense</option>
+          </select>
+          <label class="f-label">Stat Amount</label>
+          <input type="number" id="dq-stat-amount" value="1" min="1">
+          <label class="f-label">XP Reward</label>
+          <input type="number" id="dq-xp" value="15" min="1">
+          <div class="btn-row">
+            <button class="btn" id="dq-submit-btn" onclick="addDailyQuestUI()">+ Add Quest</button>
+            <button class="btn secondary fade-hidden" id="dq-cancel-btn" onclick="resetDailyQuestForm()">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="inner-quests-log" class="inner-view">
+        <div class="panel">
+          <div class="panel-title">New Quest</div>
+          <label class="f-label">Title</label>
+          <input type="text" id="q-title" placeholder="Quest title">
+          <label class="f-label">Description</label>
+          <textarea id="q-desc" placeholder="Details..."></textarea>
+          <label class="f-label">Rank</label>
+          <select id="q-rank">
+            <option value="E">E-Rank (10 XP)</option>
+            <option value="D">D-Rank (25 XP)</option>
+            <option value="C">C-Rank (50 XP)</option>
+            <option value="B">B-Rank (100 XP)</option>
+            <option value="A">A-Rank (250 XP)</option>
+            <option value="S">S-Rank (500 XP)</option>
+          </select>
+          <label class="f-label">Stat Boosted</label>
+          <select id="q-stat">
+            <option value="Strength">Strength</option>
+            <option value="Intelligence">Intelligence</option>
+            <option value="Agility">Agility</option>
+            <option value="Vitality">Vitality</option>
+            <option value="Sense">Sense</option>
+          </select>
+          <button class="btn purple" onclick="addQuestUI()">+ Register Quest</button>
+        </div>
+        <div class="panel">
+          <div class="panel-title">Active &amp; Completed</div>
+          <div id="quest-log-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DUNGEON VIEW -->
+    <section id="view-dungeon" class="view">
+      <div class="panel">
+        <div class="panel-title">Dungeon Raid — Focus Timer</div>
+        <div class="dungeon-select">
+          <div class="dur-btn selected" data-dur="25" onclick="selectDuration(25)"><div class="n">25</div><div class="l">min raid</div></div>
+          <div class="dur-btn" data-dur="50" onclick="selectDuration(50)"><div class="n">50</div><div class="l">min raid</div></div>
+        </div>
+        <button class="btn purple" onclick="enterDungeon()">⚔ Enter Dungeon</button>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Raid Log</div>
+        <div id="dungeon-stats-text" style="font-size:13px;color:var(--text-dim)">Boss clears grant bonus Agility &amp; XP. Aborting a raid early triggers a penalty.</div>
+      </div>
+    </section>
+
+    <!-- PEOPLE VIEW -->
+    <section id="view-people" class="view">
+      <div class="panel">
+        <div class="panel-title">People Scanner</div>
+        <input type="text" id="people-search" placeholder="Search by name..." oninput="onPeopleSearch()">
+        <button class="btn secondary" onclick="togglePersonForm()">+ Add Person</button>
+      </div>
+
+      <div class="panel fade-hidden" id="person-form-panel">
+        <div class="panel-title" id="person-form-title">Add Person</div>
+        <input type="hidden" id="p-id">
+        <label class="f-label">Name</label>
+        <input type="text" id="p-name" placeholder="Full name">
+        <label class="f-label">Relation</label>
+        <input type="text" id="p-relation" placeholder="e.g. Friend, Cousin, Colleague">
+        <label class="f-label">How We Met</label>
+        <input type="text" id="p-howwemet" placeholder="e.g. College, Work, Family">
+        <label class="f-label">Personality Notes</label>
+        <textarea id="p-personality" placeholder="Their personality, likes/dislikes..."></textarea>
+        <label class="f-label">Birthday</label>
+        <input type="date" id="p-birthday">
+        <label class="f-label">How To Behave With Them</label>
+        <textarea id="p-advice" placeholder="Advice for interacting with them..."></textarea>
+        <div class="btn-row">
+          <button class="btn" onclick="savePersonUI()">Save</button>
+          <button class="btn secondary" onclick="togglePersonForm()">Cancel</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">Known Hunters &amp; Civilians</div>
+        <div id="people-list"></div>
+      </div>
+    </section>
+
+    <!-- SYSTEM AI VIEW -->
+    <section id="view-ai" class="view">
+      <div class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div class="panel-title" style="margin:0;">System AI</div>
+          <div class="btn-row" style="width:auto;">
+            <button class="icon-btn" id="mute-btn" onclick="toggleMute()" title="Toggle voice">🔊</button>
+            <button class="icon-btn" onclick="clearChatUI()" title="Clear chat">🗑</button>
+          </div>
+        </div>
+        <div id="chat-log"></div>
+        <div class="chat-input-row">
+          <button class="icon-btn mic-btn" id="mic-btn" onclick="toggleMic()">🎤</button>
+          <input type="text" id="ai-input" placeholder="Ask The System anything..." onkeydown="if(event.key==='Enter')sendAiMessage()">
+          <button class="icon-btn" onclick="sendAiMessage()">➤</button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<nav class="bottom-nav">
+  <button class="nav-btn active" data-view="status" onclick="switchView('status')"><span class="ic">🏮</span>Status</button>
+  <button class="nav-btn" data-view="quests" onclick="switchView('quests')"><span class="ic">📜</span>Quests</button>
+  <button class="nav-btn" data-view="dungeon" onclick="switchView('dungeon')"><span class="ic">🗝</span>Dungeon</button>
+  <button class="nav-btn" data-view="people" onclick="switchView('people')"><span class="ic">👥</span>People</button>
+  <button class="nav-btn" data-view="ai" onclick="switchView('ai')"><span class="ic">🤖</span>System AI</button>
+</nav>
+
+<div id="popup-stack"></div>
+
+<div id="gate-overlay">
+  <div class="gate-text">GATE OPENING</div>
+  <div class="gate-door" id="gate-door"><div class="gate-half left"></div><div class="gate-half right"></div></div>
+</div>
+
+<div id="timer-overlay">
+  <div class="timer-sub" id="timer-label">DUNGEON IN PROGRESS</div>
+  <div class="timer-num" id="timer-display">25:00</div>
+  <div class="timer-sub" style="margin-top:18px">Stay focused, Hunter.</div>
+  <button class="btn danger" style="max-width:220px; margin-top:30px;" onclick="abortDungeon()">Abort Raid</button>
+</div>
+
+<div id="levelup-overlay">
+  <div class="particles" id="particles"></div>
+  <div class="levelup-title">LEVEL UP!</div>
+  <div class="levelup-num" id="levelup-number">2</div>
+  <div class="briefing-msg" id="levelup-title-text">New Title Unlocked</div>
+</div>
+
+<div id="briefing-overlay">
+  <div class="panel briefing-card">
+    <h2 class="orbitron">[SYSTEM] DAILY BRIEFING</h2>
+    <div class="briefing-msg" id="briefing-motivational">...</div>
+    <div class="briefing-stats">
+      <div class="briefing-stat"><div class="n" id="briefing-pending">0</div><div class="l">Quests Left</div></div>
+      <div class="briefing-stat"><div class="n" id="briefing-streak">0</div><div class="l">Day Streak</div></div>
+    </div>
+    <button class="btn" onclick="closeBriefing()">Acknowledge</button>
+  </div>
+</div>
+
+<div id="loading-overlay">
+  <div class="loader-ring"></div>
+  <div class="loader-text">SYSTEM LOADING...</div>
+</div>
+
+<script>
+  // ── STATE ──────────────────────────────────────────────────────────────────
+  let currentPlayer = null;
+  let dungeonDuration = 25;
+  let dungeonSecondsLeft = 0;
+  let dungeonTimerHandle = null;
+  let dungeonActive = false;
+  let voiceEnabled = true;
+  let selectedVoice = null;
+  let recognition = null;
+  let penaltyWarningShown = false;
+  let peopleExpandedId = null;
+
+  // ── LOADING / SERVER CALL WRAPPER ─────────────────────────────────────────
+  function showLoading() { document.getElementById('loading-overlay').style.display = 'flex'; }
+  function hideLoading() { document.getElementById('loading-overlay').style.display = 'none'; }
+
+  function callServer(fnName, args) {
+    return new Promise(function (resolve, reject) {
+      showLoading();
+      google.script.run
+        .withSuccessHandler(function (res) { hideLoading(); resolve(res); })
+        .withFailureHandler(function (err) { hideLoading(); systemPopup('[SYSTEM]: Error — ' + err.message, 'penalty'); reject(err); })
+        [fnName].apply(null, args || []);
+    });
+  }
+
+  // ── NAVIGATION ─────────────────────────────────────────────────────────────
+  function switchView(name) {
+    document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
+    document.getElementById('view-' + name).classList.add('active');
+    document.querySelectorAll('.nav-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.view === name); });
+    if (name === 'quests') refreshQuestLog();
+    if (name === 'people') refreshPeople();
+    if (name === 'ai') refreshChat();
+  }
+
+  function switchInner(group, name) {
+    document.querySelectorAll('#view-' + group + ' .inner-view').forEach(function (v) { v.classList.remove('active'); });
+    document.getElementById('inner-' + group + '-' + name).classList.add('active');
+    document.querySelectorAll('#view-' + group + ' .inner-tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.inner === name); });
+  }
+
+  // ── SYSTEM POPUPS + SOUND ─────────────────────────────────────────────────
+  function playBeep() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.16, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + 0.35);
+    } catch (e) { /* audio unavailable */ }
+  }
+
+  function systemPopup(text, type) {
+    const stack = document.getElementById('popup-stack');
+    const el = document.createElement('div');
+    el.className = 'sys-popup' + (type ? ' ' + type : '');
+    el.textContent = text;
+    el.onclick = function () { el.remove(); };
+    stack.appendChild(el);
+    playBeep();
+    speak(text);
+    setTimeout(function () { if (el.parentNode) el.remove(); }, type === 'penalty' ? 6000 : 4200);
+  }
+
+  function showLevelUp(newLevel, title) {
+    const overlay = document.getElementById('levelup-overlay');
+    document.getElementById('levelup-number').textContent = 'LV. ' + newLevel;
+    document.getElementById('levelup-title-text').textContent = title;
+    const pcontainer = document.getElementById('particles');
+    pcontainer.innerHTML = '';
+    for (let i = 0; i < 26; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      p.style.left = (Math.random() * 100) + '%';
+      p.style.bottom = (Math.random() * 30) + '%';
+      p.style.animationDelay = (Math.random() * 0.5) + 's';
+      p.style.background = Math.random() > 0.5 ? '#00b4ff' : '#7b2ff7';
+      pcontainer.appendChild(p);
+    }
+    overlay.style.display = 'flex';
+    playBeep();
+    speak('[SYSTEM]: Level up. You are now level ' + newLevel + ', ' + title + '.');
+    setTimeout(function () { overlay.style.display = 'none'; }, 2800);
+  }
+
+  function handleQuestResult(res, sourceLabel) {
+    if (res.alreadyDone) { systemPopup('[SYSTEM]: Quest already completed.', 'info'); return; }
+    currentPlayer = res.player;
+    renderPlayer(currentPlayer);
+    systemPopup('[SYSTEM]: ' + sourceLabel + ' complete. +' + res.xpGained + ' XP earned.', 'quest');
+    if (res.unlockedAchievements && res.unlockedAchievements.length) {
+      res.unlockedAchievements.forEach(function (a, i) {
+        setTimeout(function () { systemPopup('[SYSTEM]: Achievement unlocked — ' + a.icon + ' ' + a.name, 'achievement'); }, 900 * (i + 1));
+      });
+      refreshAchievements();
+    }
+    if (res.leveledUp) {
+      setTimeout(function () { showLevelUp(res.newLevel, currentPlayer.title); }, res.unlockedAchievements.length ? 900 * (res.unlockedAchievements.length + 1) : 600);
+    }
+  }
+
+  // ── PLAYER RENDERING ───────────────────────────────────────────────────────
+  function renderPlayer(p) {
+    currentPlayer = p;
+    document.getElementById('topbar-level').textContent = 'LV. ' + p.level;
+    document.getElementById('status-name').textContent = p.name;
+    document.getElementById('status-title').textContent = p.title;
+    document.getElementById('avatar-initial').textContent = (p.name || 'H').charAt(0).toUpperCase();
+
+    document.getElementById('hp-text').textContent = p.hp + '/' + p.maxHp;
+    document.getElementById('hp-bar').style.width = (100 * p.hp / p.maxHp) + '%';
+    document.getElementById('mp-text').textContent = p.mp + '/' + p.maxMp;
+    document.getElementById('mp-bar').style.width = (100 * p.mp / p.maxMp) + '%';
+    document.getElementById('xp-text').textContent = p.xp + '/' + p.xpToNext;
+    document.getElementById('xp-bar').style.width = p.xpPercent + '%';
+
+    Object.keys(p.stats).forEach(function (k) {
+      const val = p.stats[k];
+      document.getElementById('stat-' + k).style.width = Math.min(100, val) + '%';
+      document.getElementById('val-' + k).textContent = val;
+    });
+
+    document.getElementById('mini-quests').textContent = p.totalQuests;
+    document.getElementById('mini-streak').textContent = p.streak;
+    document.getElementById('mini-dungeons').textContent = p.dungeonClears;
+  }
+
+  function refreshAchievements() {
+    callServer('getAchievements').then(function (list) {
+      const grid = document.getElementById('badge-grid');
+      grid.innerHTML = '';
+      list.forEach(function (a) {
+        const el = document.createElement('div');
+        el.className = 'badge' + (a.unlocked ? ' unlocked' : '');
+        el.innerHTML = '<div class="bi">' + a.icon + '</div><div class="bn">' + a.name + '</div>';
+        el.onclick = function () {
+          document.getElementById('badge-desc').textContent = a.name + ' — ' + a.description + (a.unlocked ? ' (Unlocked ' + a.unlockedDate + ')' : ' (Locked)');
+        };
+        grid.appendChild(el);
+      });
+    });
+  }
+
+  // ── DAILY QUESTS ────────────────────────────────────────────────────────────
+  let dailyQuestCache = [];
+  function renderDailyQuests(list) {
+    dailyQuestCache = list;
+    const wrap = document.getElementById('daily-quest-list');
+    wrap.innerHTML = '';
+    if (!list.length) { wrap.innerHTML = '<div class="empty-state">No daily quests. Add one below.</div>'; return; }
+    list.forEach(function (q) {
+      const done = q.status === 'Completed';
+      const card = document.createElement('div');
+      card.className = 'quest-card' + (done ? ' done' : '');
+      card.innerHTML =
+        '<div class="quest-top">' +
+          '<div><div class="quest-title">' + escapeHtml(q.title) + '</div>' +
+          '<div class="quest-meta">+' + q.xpReward + ' XP · +' + q.statAmount + ' ' + q.statType + ' <span class="streak-flame">🔥 ' + q.streak + '</span></div></div>' +
+        '</div>' +
+        '<div class="quest-actions">' +
+          '<button class="btn small" ' + (done ? 'disabled' : '') + ' onclick="completeDailyQuestUI(\'' + q.id + '\')">' + (done ? 'Done' : 'Complete') + '</button>' +
+          '<button class="icon-btn" onclick="editDailyQuestUI(\'' + q.id + '\')">✎</button>' +
+          '<button class="icon-btn" onclick="deleteDailyQuestUI(\'' + q.id + '\')">✕</button>' +
+        '</div>';
+      wrap.appendChild(card);
+    });
+  }
+
+  function completeDailyQuestUI(id) {
+    callServer('completeDailyQuest', [id]).then(function (res) { handleQuestResult(res, 'Daily quest'); loadDailyQuests(); });
+  }
+
+  function deleteDailyQuestUI(id) {
+    callServer('deleteDailyQuest', [id]).then(renderDailyQuests);
+  }
+
+  function addDailyQuestUI() {
+    const title = document.getElementById('dq-title').value.trim();
+    if (!title) { systemPopup('[SYSTEM]: Enter a quest title.', 'info'); return; }
+    const stat = document.getElementById('dq-stat').value;
+    const statAmt = Number(document.getElementById('dq-stat-amount').value) || 1;
+    const xp = Number(document.getElementById('dq-xp').value) || 10;
+    const editId = document.getElementById('dq-edit-id').value;
+    const call = editId ? callServer('updateDailyQuest', [editId, title, stat, statAmt, xp])
+                         : callServer('addDailyQuest', [title, stat, statAmt, xp]);
+    call.then(function (list) {
+      renderDailyQuests(list);
+      resetDailyQuestForm();
+      systemPopup(editId ? '[SYSTEM]: Daily quest updated.' : '[SYSTEM]: New daily quest registered.', 'info');
+    });
+  }
+
+  function editDailyQuestUI(id) {
+    const q = dailyQuestCache.find(function (x) { return x.id === id; });
+    if (!q) return;
+    document.getElementById('dq-form-title').textContent = 'Edit Daily Quest';
+    document.getElementById('dq-edit-id').value = q.id;
+    document.getElementById('dq-title').value = q.title;
+    document.getElementById('dq-stat').value = q.statType;
+    document.getElementById('dq-stat-amount').value = q.statAmount;
+    document.getElementById('dq-xp').value = q.xpReward;
+    document.getElementById('dq-submit-btn').textContent = 'Save Changes';
+    document.getElementById('dq-cancel-btn').classList.remove('fade-hidden');
+    document.getElementById('dq-form-title').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function resetDailyQuestForm() {
+    document.getElementById('dq-form-title').textContent = 'Add Daily Quest';
+    document.getElementById('dq-edit-id').value = '';
+    document.getElementById('dq-title').value = '';
+    document.getElementById('dq-stat-amount').value = '1';
+    document.getElementById('dq-xp').value = '15';
+    document.getElementById('dq-submit-btn').textContent = '+ Add Quest';
+    document.getElementById('dq-cancel-btn').classList.add('fade-hidden');
+  }
+
+  function loadDailyQuests() { callServer('getDailyQuests').then(renderDailyQuests); }
+
+  // ── QUEST LOG ──────────────────────────────────────────────────────────────
+  function renderQuestLog(list) {
+    const wrap = document.getElementById('quest-log-list');
+    wrap.innerHTML = '';
+    if (!list.length) { wrap.innerHTML = '<div class="empty-state">No quests yet. Register one above.</div>'; return; }
+    list.forEach(function (q) {
+      const done = q.status === 'Completed';
+      const card = document.createElement('div');
+      card.className = 'quest-card' + (done ? ' done' : '');
+      card.innerHTML =
+        '<div class="quest-top">' +
+          '<div><div class="quest-title">' + escapeHtml(q.title) + '</div>' +
+          '<div class="quest-meta">+' + q.xpReward + ' XP · +' + q.statAmount + ' ' + q.statType + '</div>' +
+          (q.description ? '<div class="quest-desc">' + escapeHtml(q.description) + '</div>' : '') + '</div>' +
+          '<div class="rank-chip rank-' + q.rank + '">' + q.rank + '</div>' +
+        '</div>' +
+        '<div class="quest-actions">' +
+          '<button class="btn small purple" ' + (done ? 'disabled' : '') + ' onclick="completeQuestUI(\'' + q.id + '\')">' + (done ? 'Cleared' : 'Complete') + '</button>' +
+          '<button class="icon-btn" onclick="deleteQuestUI(\'' + q.id + '\')">✕</button>' +
+        '</div>';
+      wrap.appendChild(card);
+    });
+  }
+
+  function completeQuestUI(id) {
+    callServer('completeQuest', [id]).then(function (res) { handleQuestResult(res, 'Quest'); refreshQuestLog(); });
+  }
+
+  function deleteQuestUI(id) {
+    callServer('deleteQuest', [id]).then(renderQuestLog);
+  }
+
+  function addQuestUI() {
+    const title = document.getElementById('q-title').value.trim();
+    if (!title) { systemPopup('[SYSTEM]: Enter a quest title.', 'info'); return; }
+    const desc = document.getElementById('q-desc').value.trim();
+    const rank = document.getElementById('q-rank').value;
+    const stat = document.getElementById('q-stat').value;
+    callServer('addQuest', [title, desc, rank, stat]).then(function (list) {
+      renderQuestLog(list);
+      document.getElementById('q-title').value = '';
+      document.getElementById('q-desc').value = '';
+      systemPopup('[SYSTEM]: You have received a quest — ' + title, 'quest');
+    });
+  }
+
+  function refreshQuestLog() {
+    callServer('getQuestLog').then(renderQuestLog);
+  }
+
+  // ── DUNGEON MODE ───────────────────────────────────────────────────────────
+  function selectDuration(mins) {
+    dungeonDuration = mins;
+    document.querySelectorAll('.dur-btn').forEach(function (b) { b.classList.toggle('selected', Number(b.dataset.dur) === mins); });
+  }
+
+  function enterDungeon() {
+    const gate = document.getElementById('gate-overlay');
+    const door = document.getElementById('gate-door');
+    gate.style.display = 'flex';
+    door.classList.remove('gate-open');
+    playBeep();
+    setTimeout(function () { door.classList.add('gate-open'); }, 150);
+    setTimeout(function () {
+      gate.style.display = 'none';
+      startDungeonTimer();
+    }, 1700);
+  }
+
+  function startDungeonTimer() {
+    dungeonActive = true;
+    dungeonSecondsLeft = dungeonDuration * 60;
+    document.getElementById('timer-label').textContent = 'DUNGEON IN PROGRESS';
+    document.getElementById('timer-overlay').style.display = 'flex';
+    updateTimerDisplay();
+    dungeonTimerHandle = setInterval(function () {
+      dungeonSecondsLeft--;
+      updateTimerDisplay();
+      if (dungeonSecondsLeft <= 0) {
+        clearInterval(dungeonTimerHandle);
+        finishDungeon(true);
+      }
+    }, 1000);
+  }
+
+  function updateTimerDisplay() {
+    const m = Math.floor(dungeonSecondsLeft / 60);
+    const s = dungeonSecondsLeft % 60;
+    document.getElementById('timer-display').textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  function abortDungeon() {
+    if (!dungeonActive) return;
+    if (!confirm('Abort this raid? Fleeing early triggers a penalty.')) return;
+    clearInterval(dungeonTimerHandle);
+    finishDungeon(false);
+  }
+
+  function finishDungeon(success) {
+    dungeonActive = false;
+    document.getElementById('timer-overlay').style.display = 'none';
+    callServer('recordDungeonResult', [dungeonDuration, success]).then(function (res) {
+      currentPlayer = res.player;
+      renderPlayer(currentPlayer);
+      if (success) {
+        systemPopup('[SYSTEM]: BOSS CLEAR! Dungeon conquered. +' + res.xpGained + ' XP earned.', 'quest');
+      } else {
+        systemPopup('[SYSTEM]: RAID FAILED. You fled the dungeon. -' + res.xpLost + ' XP penalty.', 'penalty');
+      }
+      if (res.unlockedAchievements && res.unlockedAchievements.length) {
+        res.unlockedAchievements.forEach(function (a, i) {
+          setTimeout(function () { systemPopup('[SYSTEM]: Achievement unlocked — ' + a.icon + ' ' + a.name, 'achievement'); }, 900 * (i + 1));
+        });
+        refreshAchievements();
+      }
+      if (res.leveledUp) {
+        setTimeout(function () { showLevelUp(res.newLevel, currentPlayer.title); }, 900);
+      }
+    });
+  }
+
+  // ── PEOPLE SCANNER ─────────────────────────────────────────────────────────
+  function renderPeople(list) {
+    const wrap = document.getElementById('people-list');
+    wrap.innerHTML = '';
+    if (!list.length) { wrap.innerHTML = '<div class="empty-state">No one scanned yet. Add a person above.</div>'; return; }
+    list.forEach(function (p) {
+      const card = document.createElement('div');
+      card.className = 'person-card';
+      const open = peopleExpandedId === p.id;
+      card.innerHTML =
+        '<div class="person-head" onclick="togglePersonCard(\'' + p.id + '\')">' +
+          '<div><div class="person-name">' + escapeHtml(p.name) + '</div><div class="person-rel">' + escapeHtml(p.relation || '') + '</div></div>' +
+          '<div style="color:var(--text-dim)">' + (open ? '▲' : '▼') + '</div>' +
+        '</div>' +
+        '<div class="person-detail' + (open ? ' open' : '') + '" id="detail-' + p.id + '">' +
+          '<div class="row"><div class="k">How We Met</div><div class="v">' + escapeHtml(p.howWeMet || '—') + '</div></div>' +
+          '<div class="row"><div class="k">Personality</div><div class="v">' + escapeHtml(p.personalityNotes || '—') + '</div></div>' +
+          '<div class="row"><div class="k">Birthday</div><div class="v">' + escapeHtml(p.birthday || '—') + '</div></div>' +
+          '<div class="row"><div class="k">How To Behave</div><div class="v">' + escapeHtml(p.behaviorAdvice || '—') + '</div></div>' +
+          '<div class="btn-row">' +
+            '<button class="btn small secondary" onclick="editPersonUI(\'' + p.id + '\')">Edit</button>' +
+            '<button class="btn small danger" onclick="deletePersonUI(\'' + p.id + '\')">Delete</button>' +
+          '</div>' +
+        '</div>';
+      wrap.appendChild(card);
+    });
+  }
+
+  let allPeopleCache = [];
+  function refreshPeople() {
+    callServer('getPeople').then(function (list) { allPeopleCache = list; renderPeople(list); });
+  }
+
+  function togglePersonCard(id) {
+    peopleExpandedId = peopleExpandedId === id ? null : id;
+    renderPeople(allPeopleCache);
+  }
+
+  function onPeopleSearch() {
+    const q = document.getElementById('people-search').value;
+    callServer('searchPeople', [q]).then(function (list) { allPeopleCache = list; renderPeople(list); });
+  }
+
+  function togglePersonForm() {
+    const panel = document.getElementById('person-form-panel');
+    const willOpen = panel.classList.contains('fade-hidden');
+    panel.classList.toggle('fade-hidden');
+    if (willOpen) {
+      document.getElementById('person-form-title').textContent = 'Add Person';
+      ['p-id', 'p-name', 'p-relation', 'p-howwemet', 'p-personality', 'p-birthday', 'p-advice'].forEach(function (id) {
+        document.getElementById(id).value = '';
+      });
+    }
+  }
+
+  function editPersonUI(id) {
+    const p = allPeopleCache.find(function (x) { return x.id === id; });
+    if (!p) return;
+    document.getElementById('person-form-panel').classList.remove('fade-hidden');
+    document.getElementById('person-form-title').textContent = 'Edit Person';
+    document.getElementById('p-id').value = p.id;
+    document.getElementById('p-name').value = p.name || '';
+    document.getElementById('p-relation').value = p.relation || '';
+    document.getElementById('p-howwemet').value = p.howWeMet || '';
+    document.getElementById('p-personality').value = p.personalityNotes || '';
+    document.getElementById('p-birthday').value = p.birthday || '';
+    document.getElementById('p-advice').value = p.behaviorAdvice || '';
+    document.getElementById('person-form-panel').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function savePersonUI() {
+    const name = document.getElementById('p-name').value.trim();
+    if (!name) { systemPopup('[SYSTEM]: Enter a name.', 'info'); return; }
+    const data = {
+      id: document.getElementById('p-id').value,
+      name: name,
+      relation: document.getElementById('p-relation').value.trim(),
+      howWeMet: document.getElementById('p-howwemet').value.trim(),
+      personalityNotes: document.getElementById('p-personality').value.trim(),
+      birthday: document.getElementById('p-birthday').value,
+      behaviorAdvice: document.getElementById('p-advice').value.trim()
+    };
+    const fn = data.id ? 'updatePerson' : 'addPerson';
+    callServer(fn, [data]).then(function (list) {
+      allPeopleCache = list;
+      renderPeople(list);
+      togglePersonForm();
+      systemPopup('[SYSTEM]: ' + name + ' has been registered in the database.', 'info');
+    });
+  }
+
+  function deletePersonUI(id) {
+    if (!confirm('Remove this person from the database?')) return;
+    callServer('deletePerson', [id]).then(function (list) { allPeopleCache = list; renderPeople(list); });
+  }
+
+  // ── SYSTEM AI CHAT ─────────────────────────────────────────────────────────
+  function renderChat(history) {
+    const log = document.getElementById('chat-log');
+    log.innerHTML = '';
+    if (!history.length) {
+      log.innerHTML = '<div class="empty-state">[SYSTEM]: Awaiting your first command, Hunter.</div>';
+      return;
+    }
+    history.forEach(function (h) {
+      const el = document.createElement('div');
+      el.className = 'msg ' + (h.role === 'user' ? 'user' : 'system');
+      el.textContent = h.message;
+      log.appendChild(el);
+    });
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function refreshChat() { callServer('getChatHistory').then(renderChat); }
+
+  function sendAiMessage() {
+    const input = document.getElementById('ai-input');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    const log = document.getElementById('chat-log');
+    const userMsg = document.createElement('div');
+    userMsg.className = 'msg user';
+    userMsg.textContent = text;
+    log.appendChild(userMsg);
+    log.scrollTop = log.scrollHeight;
+
+    callServer('askSystemAI', [text]).then(function (res) {
+      const sysMsg = document.createElement('div');
+      sysMsg.className = 'msg system';
+      sysMsg.textContent = res.reply;
+      log.appendChild(sysMsg);
+      log.scrollTop = log.scrollHeight;
+      speak(res.reply);
+    });
+  }
+
+  function clearChatUI() {
+    if (!confirm('Clear entire chat history?')) return;
+    callServer('clearChatHistory').then(renderChat);
+  }
+
+  // ── VOICE: TTS ─────────────────────────────────────────────────────────────
+  function loadVoices() {
+    if (!('speechSynthesis' in window)) return;
+    const voices = window.speechSynthesis.getVoices();
+    selectedVoice = voices.find(function (v) { return /male|robot|uk english male/i.test(v.name); }) ||
+      voices.find(function (v) { return v.lang === 'en-IN'; }) ||
+      voices[0] || null;
+  }
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    loadVoices();
+  }
+
+  function speak(text) {
+    if (!voiceEnabled || !('speechSynthesis' in window)) return;
+    const clean = text.replace(/\[SYSTEM\]:?/i, '').trim();
+    if (!clean) return;
+    const utter = new SpeechSynthesisUtterance(clean);
+    utter.pitch = 0.6;
+    utter.rate = 0.95;
+    if (selectedVoice) utter.voice = selectedVoice;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utter);
+  }
+
+  function toggleMute() {
+    voiceEnabled = !voiceEnabled;
+    document.getElementById('mute-btn').textContent = voiceEnabled ? '🔊' : '🔇';
+    if (!voiceEnabled) window.speechSynthesis.cancel();
+  }
+
+  // ── VOICE: STT ─────────────────────────────────────────────────────────────
+  const SR = window.webkitSpeechRecognition || window.SpeechRecognition;
+  if (SR) {
+    recognition = new SR();
+    recognition.lang = 'en-IN';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onresult = function (e) {
+      const text = e.results[0][0].transcript;
+      document.getElementById('ai-input').value = text;
+      sendAiMessage();
+    };
+    recognition.onerror = function () { document.getElementById('mic-btn').classList.remove('listening'); };
+    recognition.onend = function () { document.getElementById('mic-btn').classList.remove('listening'); };
+  }
+
+  function toggleMic() {
+    if (!recognition) { systemPopup('[SYSTEM]: Voice input is not supported on this browser.', 'info'); return; }
+    const btn = document.getElementById('mic-btn');
+    if (btn.classList.contains('listening')) { recognition.stop(); return; }
+    btn.classList.add('listening');
+    try { recognition.start(); } catch (e) { btn.classList.remove('listening'); }
+  }
+
+  // ── DAILY BRIEFING ─────────────────────────────────────────────────────────
+  function showBriefing(b) {
+    document.getElementById('briefing-motivational').textContent = b.motivational;
+    document.getElementById('briefing-pending').textContent = b.pending;
+    document.getElementById('briefing-streak').textContent = b.streak;
+    document.getElementById('briefing-overlay').style.display = 'flex';
+  }
+
+  function closeBriefing() {
+    document.getElementById('briefing-overlay').style.display = 'none';
+    callServer('markBriefingShown');
+  }
+
+  // ── PENALTY WARNING (client-side clock check) ─────────────────────────────
+  function checkPenaltyWarning() {
+    const now = new Date();
+    if (now.getHours() === 23 && !penaltyWarningShown) {
+      callServer('getDailyQuests').then(function (list) {
+        const pending = list.filter(function (q) { return q.status !== 'Completed'; }).length;
+        if (pending > 0) {
+          penaltyWarningShown = true;
+          const minsLeft = 60 - now.getMinutes();
+          systemPopup('[SYSTEM]: ⚠ PENALTY WARNING — ' + pending + ' daily quest(s) incomplete! Reset in ~' + minsLeft + ' min. XP will be deducted.', 'penalty');
+        }
+      });
+    }
+    if (now.getHours() !== 23) penaltyWarningShown = false;
+  }
+  setInterval(checkPenaltyWarning, 60000);
+
+  // ── UTIL ───────────────────────────────────────────────────────────────────
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // ── INIT ───────────────────────────────────────────────────────────────────
+  function init() {
+    callServer('getDashboardData').then(function (data) {
+      renderPlayer(data.player);
+      renderDailyQuests(data.dailyQuests);
+      refreshAchievements();
+      if (!data.briefing.alreadyShown) showBriefing(data.briefing);
+      checkPenaltyWarning();
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
