@@ -29,9 +29,21 @@ function doGet() {
 }
 
 // ── ONE-TIME SETUP ────────────────────────────────────────────────────────────
+// Do NOT hardcode a real API key here — this file is committed to a public
+// GitHub repo, and Google's automated leak scanners will find and revoke any
+// key pasted into source. Instead, set the key directly via the Apps Script
+// UI: Project Settings (gear icon) > Script Properties > Add script property
+// > Property = GEMINI_API_KEY, Value = your key > Save. That value never
+// touches git. This function is kept only as a fallback for local use — if
+// you use it, paste your key into the RUN dialog / temporarily here on your
+// own machine, run it once, then make sure the real key is never committed.
 function setupApiKey() {
-  PropertiesService.getScriptProperties().setProperty(PROP_GEMINI_KEY, 'AIzaSyCuTrv5vuK2aV9qYxQNelF-LfXN-EI-vr0');
-  Logger.log('Gemini API key saved to Script Properties.');
+  const key = PropertiesService.getScriptProperties().getProperty(PROP_GEMINI_KEY);
+  if (key) {
+    Logger.log('Gemini API key is already set in Script Properties. Nothing to do.');
+    return;
+  }
+  throw new Error('No GEMINI_API_KEY found. Set it via Project Settings > Script Properties in the Apps Script editor — do not hardcode it in this file.');
 }
 
 function initialize() {
