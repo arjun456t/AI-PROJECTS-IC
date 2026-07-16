@@ -6,7 +6,7 @@
 const DB_NAME = 'SoloLevelingDB';
 const PROP_SPREADSHEET_ID = 'SPREADSHEET_ID';
 const PROP_GEMINI_KEY = 'GEMINI_API_KEY';
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_MODEL = 'gemini-flash-latest';
 
 const PLAYER_HEADERS = ['Name','Level','XP','XPToNext','HP','MaxHP','MP','MaxMP','Strength','Intelligence','Agility','Vitality','Sense','Title','TotalQuestsCompleted','StreakCount','DungeonClears','PerfectDays','LastActiveDate','LastBriefingDate'];
 const QUESTS_HEADERS = ['ID','Title','Description','Rank','XPReward','StatType','StatAmount','Status','CreatedDate','CompletedDate'];
