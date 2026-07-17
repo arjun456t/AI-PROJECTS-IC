@@ -55,6 +55,11 @@ function testGeminiKey() {
     Logger.log('FAILED: No GEMINI_API_KEY found in Script Properties. Set it via Project Settings > Script Properties first.');
     return;
   }
+  const preview = apiKey.length > 10
+    ? apiKey.substring(0, 6) + '...' + apiKey.substring(apiKey.length - 4)
+    : '(too short to preview)';
+  const hasWhitespace = /^\s|\s$/.test(apiKey);
+  Logger.log('Stored key preview: ' + preview + ' | length: ' + apiKey.length + ' | leading/trailing whitespace: ' + hasWhitespace);
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
   const options = {
     method: 'post',
