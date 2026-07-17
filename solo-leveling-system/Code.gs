@@ -46,6 +46,33 @@ function setupApiKey() {
   throw new Error('No GEMINI_API_KEY found. Set it via Project Settings > Script Properties in the Apps Script editor — do not hardcode it in this file.');
 }
 
+// Verify the key stored in Script Properties actually works, without ever
+// printing the key itself. Run this after saving a new key, then check the
+// Execution log (View > Logs, or the clock icon) for SUCCESS or the error.
+function testGeminiKey() {
+  const apiKey = PropertiesService.getScriptProperties().getProperty(PROP_GEMINI_KEY);
+  if (!apiKey) {
+    Logger.log('FAILED: No GEMINI_API_KEY found in Script Properties. Set it via Project Settings > Script Properties first.');
+    return;
+  }
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + apiKey;
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({ contents: [{ parts: [{ text: 'ping' }] }] }),
+    muteHttpExceptions: true
+  };
+  const response = UrlFetchApp.fetch(url, options);
+  const code = response.getResponseCode();
+  if (code === 200) {
+    Logger.log('SUCCESS: Gemini API key is valid and gemini model "' + GEMINI_MODEL + '" responded correctly.');
+  } else {
+    const body = JSON.parse(response.getContentText());
+    const msg = (body.error && body.error.message) || 'Unknown error';
+    Logger.log('FAILED (' + code + '): ' + msg);
+  }
+}
+
 function initialize() {
   const ss = getOrCreateSpreadsheet();
   setupSheet(ss, 'Player', PLAYER_HEADERS);
