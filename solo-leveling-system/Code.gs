@@ -140,6 +140,9 @@ function setupSheet(ss, name, headers) {
 function getSheetInfo(name) {
   const ss = getOrCreateSpreadsheet();
   const sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    throw new Error('Sheet "' + name + '" not found in the SoloLevelingDB spreadsheet. Run initialize() again from the script editor to recreate it.');
+  }
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
   const idx = {};

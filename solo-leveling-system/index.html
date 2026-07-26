@@ -555,6 +555,21 @@
   let penaltyWarningShown = false;
   let peopleExpandedId = null;
 
+  // ── GLOBAL ERROR SAFETY NET ─────────────────────────────────────────────────
+  // If anything throws unexpectedly (a bad value from the sheet, a browser
+  // quirk, etc.) the app must never just go silent/blank. Surface it as a
+  // visible System message and make sure the loading overlay never gets
+  // stuck covering the screen.
+  window.addEventListener('error', function (e) {
+    hideLoading();
+    systemPopup('[SYSTEM]: Unexpected error — ' + (e.message || 'unknown') + '. Try again, or reload the page.', 'penalty');
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    hideLoading();
+    const msg = e.reason && e.reason.message ? e.reason.message : String(e.reason);
+    systemPopup('[SYSTEM]: Unexpected error — ' + msg + '. Try again, or reload the page.', 'penalty');
+  });
+
   // ── LOADING / SERVER CALL WRAPPER ─────────────────────────────────────────
   function showLoading() { document.getElementById('loading-overlay').style.display = 'flex'; }
   function hideLoading() { document.getElementById('loading-overlay').style.display = 'none'; }
@@ -562,9 +577,30 @@
   function callServer(fnName, args) {
     return new Promise(function (resolve, reject) {
       showLoading();
+      let settled = false;
+      const timeoutId = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        hideLoading();
+        systemPopup('[SYSTEM]: ' + fnName + ' timed out — connection to the server was too slow. Try again.', 'penalty');
+        reject(new Error('timeout: ' + fnName));
+      }, 20000);
       google.script.run
-        .withSuccessHandler(function (res) { hideLoading(); resolve(res); })
-        .withFailureHandler(function (err) { hideLoading(); systemPopup('[SYSTEM]: Error — ' + err.message, 'penalty'); reject(err); })
+        .withSuccessHandler(function (res) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeoutId);
+          hideLoading();
+          resolve(res);
+        })
+        .withFailureHandler(function (err) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeoutId);
+          hideLoading();
+          systemPopup('[SYSTEM]: Error — ' + err.message, 'penalty');
+          reject(err);
+        })
         [fnName].apply(null, args || []);
     });
   }
