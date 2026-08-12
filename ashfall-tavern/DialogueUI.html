@@ -1,0 +1,367 @@
+<script>
+/**
+ * DialogueUI.html — the dialogue box, choice buttons, mood badge and the
+ * relationship HUD.
+ *
+ * Owns no game state. It renders what it is handed and reports clicks back
+ * through the callbacks passed to `init()`.
+ */
+var DialogueUI = (function () {
+  'use strict';
+
+  var TYPE_MS = 25;                 // per character
+
+  var el = {};                      // cached DOM references
+  var personas = {};                // id → client persona record
+  var onChoice = null;
+  var onExit = null;
+
+  var current = { npcId: null, response: null, meta: null };
+  var typeTimer = 0;
+  var typeIndex = 0;
+  var typeText = '';
+  var typing = false;
+  var locked = false;               // true while a request is in flight
+
+  /**
+   * Escapes text for safe insertion as HTML.
+   * @param {string} s Raw text.
+   * @return {string} Escaped text.
+   */
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /**
+   * Caches DOM handles and wires the static listeners.
+   * @param {!Object} opts `{personas, onChoice, onExit}`.
+   * @return {!Object} The DialogueUI namespace.
+   */
+  function init(opts) {
+    opts = opts || {};
+    onChoice = opts.onChoice || null;
+    onExit = opts.onExit || null;
+
+    (opts.personas || []).forEach(function (p) { personas[p.id] = p; });
+
+    el.root = document.getElementById('dialogue');
+    el.name = document.getElementById('dlg-name');
+    el.role = document.getElementById('dlg-role');
+    el.mood = document.getElementById('dlg-mood');
+    el.line = document.getElementById('dlg-line');
+    el.choices = document.getElementById('dlg-choices');
+    el.status = document.getElementById('dlg-status');
+    el.hud = document.getElementById('hud-rows');
+
+    // Click anywhere on the line completes the typewriter instantly.
+    el.line.addEventListener('click', function () {
+      if (typing) finishTyping();
+    });
+
+    buildHud();
+    return API;
+  }
+
+  /* ── relationship HUD ─────────────────────────────────────────────── */
+
+  /**
+   * Builds one HUD row per NPC, each with a procedurally drawn portrait.
+   */
+  function buildHud() {
+    el.hud.innerHTML = '';
+    el.hudBars = {};
+
+    for (var id in personas) {
+      if (!Object.prototype.hasOwnProperty.call(personas, id)) continue;
+      var p = personas[id];
+
+      var row = document.createElement('div');
+      row.className = 'hud-row';
+
+      var cv = document.createElement('canvas');
+      cv.width = 60; cv.height = 60;
+      row.appendChild(cv);
+
+      var meta = document.createElement('div');
+      meta.className = 'hud-meta';
+      meta.innerHTML =
+        '<div class="hud-name"><span class="hud-val" id="hudv-' + esc(id) + '">0</span>' +
+        esc(p.name) + '</div>' +
+        '<div class="hud-bar" id="hudb-' + esc(id) + '"><i></i></div>';
+      row.appendChild(meta);
+      el.hud.appendChild(row);
+
+      // portraits are static — drawn once, never in the frame loop
+      var pctx = cv.getContext('2d');
+      pctx.clearRect(0, 0, 60, 60);
+      Sprites.drawPortrait(pctx, 30, 34, 42, p.sprite, 0);
+
+      el.hudBars[id] = {
+        bar: document.getElementById('hudb-' + id),
+        val: document.getElementById('hudv-' + id)
+      };
+    }
+  }
+
+  /**
+   * Repaints the relationship bars from world state.
+   * @param {!Object} state World state.
+   */
+  function updateHud(state) {
+    if (!state || !state.npcRelationships) return;
+    for (var id in el.hudBars) {
+      if (!Object.prototype.hasOwnProperty.call(el.hudBars, id)) continue;
+      var v = state.npcRelationships[id] || 0;
+      var refs = el.hudBars[id];
+      if (!refs.bar) continue;
+      var fill = refs.bar.firstChild;
+      var pct = Math.abs(v) / 10 * 50;
+      if (v >= 0) {
+        refs.bar.classList.remove('neg');
+        fill.style.left = '50%';
+      } else {
+        refs.bar.classList.add('neg');
+        fill.style.left = (50 - pct) + '%';
+      }
+      fill.style.width = pct + '%';
+      refs.val.textContent = (v > 0 ? '+' : '') + v;
+    }
+  }
+
+  /* ── open / close ─────────────────────────────────────────────────── */
+
+  /**
+   * Slides the box up and shows the loading state.
+   * @param {string} npcId Persona id.
+   */
+  function open(npcId) {
+    var p = personas[npcId] || { name: npcId, role: '', mood: 'neutral' };
+    current.npcId = npcId;
+    current.response = null;
+
+    el.name.textContent = p.name;
+    el.role.textContent = p.role || '';
+    setMood(p.mood || 'neutral');
+
+    el.line.innerHTML = '<span class="thinking-dots" style="opacity:.55"></span>';
+    el.choices.innerHTML = '';
+    el.status.innerHTML = '';
+    locked = true;
+
+    el.root.classList.add('open');
+    document.getElementById('hints').classList.add('dim');
+  }
+
+  /**
+   * Slides the box away.
+   */
+  function close() {
+    stopTyping();
+    el.root.classList.remove('open');
+    document.getElementById('hints').classList.remove('dim');
+    current.npcId = null;
+    current.response = null;
+    locked = false;
+  }
+
+  /**
+   * Whether the box is currently visible.
+   * @return {boolean} Open state.
+   */
+  function isOpen() {
+    return el.root && el.root.classList.contains('open');
+  }
+
+  /**
+   * Puts the box back into its loading state between turns.
+   * @param {boolean} on Whether a request is pending.
+   */
+  function setThinking(on) {
+    locked = !!on;
+    if (on) {
+      stopTyping();
+      el.line.innerHTML = '<span class="thinking-dots" style="opacity:.55"></span>';
+      el.choices.innerHTML = '';
+    }
+  }
+
+  /* ── mood badge ───────────────────────────────────────────────────── */
+
+  /**
+   * Sets the colour-coded mood badge.
+   * @param {string} emotion Emotion name.
+   */
+  function setMood(emotion) {
+    var e = emotion || 'neutral';
+    el.mood.className = 'mood-badge mood-' + e;
+    el.mood.textContent = e;
+  }
+
+  /* ── typewriter ───────────────────────────────────────────────────── */
+
+  /**
+   * Cancels any in-progress reveal.
+   */
+  function stopTyping() {
+    if (typeTimer) clearInterval(typeTimer);
+    typeTimer = 0;
+    typing = false;
+  }
+
+  /**
+   * Reveals the whole line at once and shows the choices.
+   */
+  function finishTyping() {
+    stopTyping();
+    el.line.textContent = typeText;
+    renderChoices();
+  }
+
+  /**
+   * Starts the 25ms/char reveal.
+   * @param {string} text Line to reveal.
+   */
+  function startTyping(text) {
+    stopTyping();
+    typeText = String(text || '');
+    typeIndex = 0;
+    typing = true;
+    el.line.textContent = '';
+
+    var caret = document.createElement('span');
+    caret.className = 'caret';
+    caret.textContent = '▌';
+
+    typeTimer = setInterval(function () {
+      typeIndex++;
+      if (typeIndex >= typeText.length) {
+        finishTyping();
+        return;
+      }
+      el.line.textContent = typeText.slice(0, typeIndex);
+      el.line.appendChild(caret);
+    }, TYPE_MS);
+  }
+
+  /* ── choices ──────────────────────────────────────────────────────── */
+
+  /**
+   * Renders the choice buttons for the current response.
+   */
+  function renderChoices() {
+    el.choices.innerHTML = '';
+    if (!current.response) return;
+    var choices = current.response.choices || [];
+
+    for (var i = 0; i < choices.length; i++) {
+      (function (c) {
+        var b = document.createElement('button');
+        b.className = 'choice tone-' + (c.tone || 'blunt') + (c.leadsTo === 'end' ? ' is-exit' : '');
+        b.type = 'button';
+
+        var rep = '';
+        if (c.repDelta > 0) rep = '+' + c.repDelta;
+        else if (c.repDelta < 0) rep = String(c.repDelta);
+
+        b.innerHTML =
+          '<span class="tone-tag">' + esc(c.tone || 'blunt') + '</span>' +
+          '<span class="choice-text">' + esc(c.text) + '</span>' +
+          (rep ? '<span class="rep-tag">' + esc(rep) + '</span>' : '');
+
+        b.addEventListener('click', function () {
+          if (locked) return;
+          locked = true;
+          var all = el.choices.querySelectorAll('.choice');
+          for (var k = 0; k < all.length; k++) all[k].disabled = true;
+
+          if (c.leadsTo === 'end') {
+            if (onExit) onExit(current.npcId, c);
+          } else if (onChoice) {
+            onChoice(current.npcId, c);
+          }
+        });
+        el.choices.appendChild(b);
+      })(choices[i]);
+    }
+  }
+
+  /* ── render a turn ────────────────────────────────────────────────── */
+
+  /**
+   * Displays a generated turn: mood badge, typewriter line, then choices.
+   * @param {string} npcId Persona id.
+   * @param {!Object} response Guardrail-approved response.
+   * @param {!Object=} meta `{latencyMs, cached, fallbackUsed, violations, tokensEst}`.
+   */
+  function render(npcId, response, meta) {
+    var p = personas[npcId] || { name: npcId, role: '' };
+    current.npcId = npcId;
+    current.response = response;
+    current.meta = meta || {};
+    locked = false;
+
+    el.name.textContent = p.name;
+    el.role.textContent = p.role || '';
+    setMood(response.emotion || 'neutral');
+
+    startTyping(response.line || '...');
+    renderStatus(current.meta, response);
+  }
+
+  /**
+   * Renders the small engine-status strip under the choices. This is the
+   * detail that tells a buyer the line was generated, checked and costed.
+   * @param {!Object} meta Debug metadata.
+   * @param {!Object} response The response being shown.
+   */
+  function renderStatus(meta, response) {
+    var bits = [];
+    if (meta.cached) bits.push('<span class="flag-cache">cached · deterministic</span>');
+    else if (typeof meta.latencyMs === 'number' && meta.latencyMs > 0) bits.push(meta.latencyMs + 'ms');
+    if (response._fallback) bits.push('<span class="flag-fallback">fallback line</span>');
+
+    var blocks = 0;
+    (meta.violations || []).forEach(function (v) { if (v.severity === 'block') blocks++; });
+    if (blocks) bits.push('<span class="flag-fallback">' + blocks + ' guardrail block' + (blocks > 1 ? 's' : '') + '</span>');
+
+    if (response.intent) bits.push('intent: ' + esc(response.intent));
+    if ((response.loreUsed || []).length) bits.push('lore: ' + esc(response.loreUsed.join(', ')));
+    if ((response.revealed || []).length) bits.push('revealed: ' + esc(response.revealed.join(', ')));
+
+    el.status.innerHTML = bits.join('<span style="opacity:.35">│</span>');
+  }
+
+  /**
+   * Shows an unrecoverable message in the box without breaking the fiction.
+   * @param {string} npcId Persona id.
+   * @param {string} text Line to show.
+   */
+  function renderPlain(npcId, text) {
+    var p = personas[npcId] || { name: npcId, role: '' };
+    el.name.textContent = p.name;
+    el.role.textContent = p.role || '';
+    setMood('wary');
+    current.response = null;
+    locked = false;
+    stopTyping();
+    el.line.textContent = text;
+    el.choices.innerHTML = '';
+    el.status.textContent = '';
+  }
+
+  var API = {
+    init: init,
+    open: open,
+    close: close,
+    isOpen: isOpen,
+    render: render,
+    renderPlain: renderPlain,
+    setThinking: setThinking,
+    updateHud: updateHud,
+    setMood: setMood
+  };
+  return API;
+})();
+</script>

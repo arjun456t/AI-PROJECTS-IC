@@ -1,0 +1,439 @@
+<script>
+/**
+ * DevPanel.html — the integration layer, toggled with `~`.
+ *
+ * This panel is the sales pitch, not a debug dump: it shows the exact prompt
+ * that produced the last line, the raw model JSON, which lore entries were
+ * retrieved and why, every guardrail that fired, live world state, latency,
+ * token spend, projected cost per 1000 lines, and the export/pre-bake tools a
+ * studio would actually wire into their pipeline.
+ */
+var DevPanel = (function () {
+  'use strict';
+
+  var el = {};
+  var hooks = { onExport: null, onPrebake: null, onConfig: null, onClearTree: null };
+  var last = { debug: null, response: null, state: null };
+  var activeTab = 'prompt';
+  var statsTimer = 0;
+
+  /**
+   * Escapes text for HTML insertion.
+   * @param {string} s Raw text.
+   * @return {string} Escaped text.
+   */
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  /**
+   * Pretty-prints JSON, falling back to the raw string when it will not parse.
+   * @param {string|!Object} v Value.
+   * @return {string} Display text.
+   */
+  function pretty(v) {
+    if (v === null || v === undefined || v === '') return '(empty)';
+    if (typeof v === 'object') return JSON.stringify(v, null, 2);
+    try {
+      return JSON.stringify(JSON.parse(String(v)), null, 2);
+    } catch (err) {
+      return String(v);
+    }
+  }
+
+  /**
+   * Wires the panel up.
+   * @param {!Object} opts `{onExport, onPrebake, onConfig, onClearTree, personas, config}`.
+   * @return {!Object} The DevPanel namespace.
+   */
+  function init(opts) {
+    opts = opts || {};
+    hooks.onExport = opts.onExport || null;
+    hooks.onPrebake = opts.onPrebake || null;
+    hooks.onConfig = opts.onConfig || null;
+    hooks.onClearTree = opts.onClearTree || null;
+
+    el.root = document.getElementById('dev');
+    el.close = document.getElementById('dev-close');
+    el.tabs = document.getElementById('dev-tabs');
+    el.panes = {
+      prompt: document.getElementById('pane-prompt'),
+      response: document.getElementById('pane-response'),
+      lore: document.getElementById('pane-lore'),
+      guard: document.getElementById('pane-guard'),
+      state: document.getElementById('pane-state')
+    };
+    el.metrics = {
+      latency: document.getElementById('m-latency'),
+      tokens: document.getElementById('m-tokens'),
+      cost: document.getElementById('m-cost'),
+      fps: document.getElementById('m-fps')
+    };
+    el.violCount = document.getElementById('viol-count');
+    el.prebakeBar = document.getElementById('prebake-bar');
+    el.prebakeMsg = document.getElementById('prebake-msg');
+    el.npcSelect = document.getElementById('cfg-npc');
+    el.depthSelect = document.getElementById('cfg-depth');
+    el.tierSelect = document.getElementById('cfg-tier');
+    el.modelSelect = document.getElementById('cfg-model');
+    el.tempRange = document.getElementById('cfg-temp');
+    el.tempOut = document.getElementById('cfg-temp-out');
+    el.detCheck = document.getElementById('cfg-det');
+    el.buttons = el.root.querySelectorAll('[data-export]');
+
+    // ── NPC picker ──────────────────────────────────────────────────────
+    (opts.personas || []).forEach(function (p) {
+      var o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.name;
+      el.npcSelect.appendChild(o);
+    });
+
+    // ── tabs ────────────────────────────────────────────────────────────
+    el.tabs.addEventListener('click', function (ev) {
+      var btn = ev.target.closest ? ev.target.closest('.dev-tab') : null;
+      if (!btn) return;
+      showTab(btn.getAttribute('data-tab'));
+    });
+
+    el.close.addEventListener('click', function () { toggle(false); });
+
+    // ── export buttons ──────────────────────────────────────────────────
+    for (var i = 0; i < el.buttons.length; i++) {
+      (function (b) {
+        b.addEventListener('click', function () {
+          if (hooks.onExport) hooks.onExport(b.getAttribute('data-export'));
+        });
+      })(el.buttons[i]);
+    }
+
+    document.getElementById('btn-prebake').addEventListener('click', function () {
+      if (hooks.onPrebake) {
+        hooks.onPrebake(el.npcSelect.value, parseInt(el.depthSelect.value, 10));
+      }
+    });
+    document.getElementById('btn-cleartree').addEventListener('click', function () {
+      if (hooks.onClearTree) hooks.onClearTree();
+    });
+
+    // ── config controls ─────────────────────────────────────────────────
+    function pushConfig() {
+      if (!hooks.onConfig) return;
+      hooks.onConfig({
+        ratingTier: el.tierSelect.value,
+        model: el.modelSelect.value,
+        temperature: parseFloat(el.tempRange.value),
+        deterministicMode: el.detCheck.checked
+      });
+    }
+    el.tierSelect.addEventListener('change', pushConfig);
+    el.modelSelect.addEventListener('change', pushConfig);
+    el.detCheck.addEventListener('change', function () {
+      el.tempRange.disabled = el.detCheck.checked;
+      el.tempOut.textContent = el.detCheck.checked ? '0.00' : (+el.tempRange.value).toFixed(2);
+      pushConfig();
+    });
+    el.tempRange.addEventListener('input', function () {
+      el.tempOut.textContent = (+el.tempRange.value).toFixed(2);
+    });
+    el.tempRange.addEventListener('change', pushConfig);
+
+    if (opts.config) setConfig(opts.config);
+
+    // ── `~` toggles the panel ───────────────────────────────────────────
+    window.addEventListener('keydown', function (ev) {
+      var t = document.activeElement;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+      if (ev.key === '~' || ev.key === '`') {
+        ev.preventDefault();
+        toggle();
+      }
+    });
+
+    // FPS + world state refresh, decoupled from the render loop
+    statsTimer = setInterval(function () {
+      if (!isOpen()) return;
+      var s = (typeof Game !== 'undefined') ? Game.getState() : null;
+      if (!s) return;
+      el.metrics.fps.innerHTML = s.fps + ' <small>fps</small>';
+      el.metrics.fps.parentNode.classList.toggle('alert', s.fps < 50);
+      if (activeTab === 'state') renderState();
+    }, 500);
+
+    showTab('prompt');
+    return API;
+  }
+
+  /**
+   * Reflects a config object into the panel controls.
+   * @param {!Object} cfg `{ratingTier, model, temperature, deterministicMode}`.
+   */
+  function setConfig(cfg) {
+    if (!cfg) return;
+    if (cfg.ratingTier) el.tierSelect.value = cfg.ratingTier;
+    if (cfg.model) {
+      var found = false;
+      for (var i = 0; i < el.modelSelect.options.length; i++) {
+        if (el.modelSelect.options[i].value === cfg.model) found = true;
+      }
+      if (!found) {
+        var o = document.createElement('option');
+        o.value = cfg.model; o.textContent = cfg.model;
+        el.modelSelect.appendChild(o);
+      }
+      el.modelSelect.value = cfg.model;
+    }
+    if (typeof cfg.temperature === 'number') {
+      el.tempRange.value = cfg.temperature;
+      el.tempOut.textContent = cfg.temperature.toFixed(2);
+    }
+    el.detCheck.checked = !!cfg.deterministicMode;
+    el.tempRange.disabled = !!cfg.deterministicMode;
+    if (cfg.deterministicMode) el.tempOut.textContent = '0.00';
+  }
+
+  /**
+   * Switches the visible tab.
+   * @param {string} name Tab id.
+   */
+  function showTab(name) {
+    activeTab = name;
+    var tabs = el.tabs.querySelectorAll('.dev-tab');
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].classList.toggle('active', tabs[i].getAttribute('data-tab') === name);
+    }
+    for (var k in el.panes) {
+      if (Object.prototype.hasOwnProperty.call(el.panes, k)) {
+        el.panes[k].classList.toggle('active', k === name);
+      }
+    }
+    if (name === 'state') renderState();
+  }
+
+  /**
+   * Shows or hides the panel.
+   * @param {boolean=} force Explicit state; omit to flip.
+   * @return {boolean} The new open state.
+   */
+  function toggle(force) {
+    var open = (force === undefined) ? !isOpen() : !!force;
+    el.root.classList.toggle('open', open);
+    return open;
+  }
+
+  /**
+   * Whether the panel is visible.
+   * @return {boolean} Open state.
+   */
+  function isOpen() {
+    return el.root && el.root.classList.contains('open');
+  }
+
+  /* ── rendering ────────────────────────────────────────────────────── */
+
+  /**
+   * Ingests the debug payload from one generated turn.
+   * @param {!Object} debug Server debug envelope.
+   * @param {!Object} response The response that was shown.
+   * @param {!Object} state Current world state.
+   */
+  function update(debug, response, state) {
+    last.debug = debug || {};
+    last.response = response || null;
+    last.state = state || null;
+
+    var d = last.debug;
+
+    // metrics strip
+    el.metrics.latency.innerHTML = (d.cached ? '0' : (d.latencyMs || 0)) + ' <small>ms</small>';
+    el.metrics.latency.parentNode.classList.toggle('alert', !d.cached && (d.latencyMs || 0) > 2500);
+    el.metrics.tokens.innerHTML = (d.tokensEst || 0) + ' <small>tok</small>';
+    el.metrics.cost.innerHTML = '$' + (d.costPer1000Lines || 0).toFixed(2) + ' <small>/1k</small>';
+
+    // prompt pane
+    el.panes.prompt.innerHTML =
+      '<h5>System prompt sent to ' + esc(d.model || 'model') + '</h5>' +
+      '<pre>' + esc(d.prompt || '(none — cached or fallback)') + '</pre>' +
+      '<h5>User turn</h5>' +
+      '<pre>' + esc(d.userTurn || '(none)') + '</pre>';
+
+    // response pane
+    el.panes.response.innerHTML =
+      '<h5>Raw model output</h5>' +
+      '<pre>' + esc(pretty(d.raw)) + '</pre>' +
+      '<h5>After guardrails + coercion</h5>' +
+      '<pre>' + esc(pretty(last.response)) + '</pre>';
+
+    renderLore(d);
+    renderGuard(d);
+    renderState();
+  }
+
+  /**
+   * Renders the retrieval pane.
+   * @param {!Object} d Debug payload.
+   */
+  function renderLore(d) {
+    var html = '<h5>Retriever: ' + esc(d.retriever || 'keyword') + '</h5>';
+    var detail = d.loreDetail || [];
+    if (!detail.length) {
+      html += '<pre>(nothing retrieved for this turn)</pre>';
+    } else {
+      for (var i = 0; i < detail.length; i++) {
+        var e = detail[i];
+        html += '<div class="lore-item sec-' + esc(e.secrecy) + '">' +
+                '<span class="id">' + esc(e.id) + '</span>' +
+                '<span class="t">' + esc(e.title) + '</span>' +
+                '<span class="sc">' + esc(e.score) + '</span></div>';
+      }
+    }
+    html += '<h5>Cited by the model</h5><pre>' +
+            esc(((last.response && last.response.loreUsed) || []).join('\n') || '(none)') + '</pre>';
+    html += '<h5>Facts revealed this turn</h5><pre>' +
+            esc(((last.response && last.response.revealed) || []).join('\n') || '(none)') + '</pre>';
+    html += '<div class="dev-note">Entries are hard-filtered by this character\'s knowledge ' +
+            'boundaries and secrecy tier before the prompt is built — an NPC physically ' +
+            'cannot cite what it was never served.</div>';
+    el.panes.lore.innerHTML = html;
+  }
+
+  /**
+   * Renders the guardrail pane.
+   * @param {!Object} d Debug payload.
+   */
+  function renderGuard(d) {
+    var v = d.violations || [];
+    var blocks = 0;
+    for (var i = 0; i < v.length; i++) if (v[i].severity === 'block') blocks++;
+
+    el.violCount.textContent = v.length;
+    el.violCount.style.display = v.length ? 'inline-block' : 'none';
+    el.violCount.style.background = blocks ? 'var(--block)' : 'var(--warn)';
+
+    var html = '<h5>Rating tier in force</h5>' +
+               '<div class="kv"><b>effective tier</b><span>' + esc(d.ratingTier || 'T') + '</span></div>' +
+               '<div class="kv"><b>attempts</b><span>' + esc(d.attempts || 0) + '</span></div>' +
+               '<div class="kv"><b>fallback served</b><span>' + (d.fallbackUsed ? 'yes' : 'no') + '</span></div>' +
+               '<div class="kv"><b>deterministic</b><span>' + (d.deterministicMode ? 'on · temp 0' : 'off') + '</span></div>' +
+               '<div class="kv"><b>cache</b><span>' + (d.cached ? ('hit · ' + esc(d.cacheTier || '')) : 'miss') + '</span></div>' +
+               '<h5>Violations (' + v.length + ')</h5>';
+
+    if (!v.length) {
+      html += '<pre>clean — nothing tripped</pre>';
+    } else {
+      for (var k = 0; k < v.length; k++) {
+        html += '<div class="viol ' + esc(v[k].severity) + '"><b>' + esc(v[k].rule) + '</b>' +
+                '<span>' + esc(v[k].detail) + (v[k].field ? (' · ' + esc(v[k].field)) : '') + '</span></div>';
+      }
+    }
+    if (d.error) html += '<h5>Engine error</h5><pre>' + esc(d.error) + '</pre>';
+    el.panes.guard.innerHTML = html;
+  }
+
+  /**
+   * Renders live world + engine state.
+   */
+  function renderState() {
+    var g = (typeof Game !== 'undefined') ? Game.getState() : {};
+    var s = last.state || {};
+    var d = last.debug || {};
+
+    var html = '<h5>Engine</h5>';
+    html += kv('fps', g.fps);
+    html += kv('mode', g.mode);
+    html += kv('player', g.playerX + ', ' + g.playerY);
+    html += kv('camera', g.camX + ', ' + g.camY);
+    html += kv('focus', g.focusNpc || '—');
+    html += kv('draw calls / frame', g.drawCalls);
+    html += kv('collision solids', g.solids);
+
+    html += '<h5>World state</h5>';
+    html += kv('time of day', s.timeOfDay);
+    html += kv('village reputation', s.reputation);
+    html += kv('turns played', s.turnCount);
+    var rels = s.npcRelationships || {};
+    for (var id in rels) {
+      if (Object.prototype.hasOwnProperty.call(rels, id)) html += kv('rep · ' + id, rels[id]);
+    }
+    var flags = Object.keys(s.questFlags || {});
+    html += kv('quest flags', flags.length ? flags.join(', ') : 'none');
+    html += kv('facts revealed', (s.revealed || []).join(', ') || 'none');
+
+    html += '<h5>Determinism</h5>';
+    html += kv('world state hash', d.worldStateHash);
+    html += kv('cache key', d.cacheKey);
+
+    html += '<h5>Memory (last turns)</h5>';
+    var mem = (s.npcMemory && d.npcId && s.npcMemory[d.npcId]) || null;
+    if (mem) {
+      html += kv('mood', mem.mood);
+      html += '<pre>' + esc((mem.turns || []).map(function (t) {
+        return (t.role === 'player' ? '› ' : '‹ ') + t.text;
+      }).join('\n')) + '</pre>';
+    } else {
+      html += '<pre>(no conversation yet)</pre>';
+    }
+
+    el.panes.state.innerHTML = html;
+  }
+
+  /**
+   * One key/value row.
+   * @param {string} k Label.
+   * @param {*} v Value.
+   * @return {string} HTML.
+   */
+  function kv(k, v) {
+    return '<div class="kv"><b>' + esc(k) + '</b><span>' +
+           esc(v === undefined || v === null || v === '' ? '—' : v) + '</span></div>';
+  }
+
+  /* ── prebake progress ─────────────────────────────────────────────── */
+
+  /**
+   * Updates the pre-bake progress readout.
+   * @param {number} pct 0..100.
+   * @param {string} msg Status text.
+   * @param {boolean=} busy Whether to disable the trigger button.
+   */
+  function prebakeProgress(pct, msg, busy) {
+    el.prebakeBar.firstChild.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    el.prebakeMsg.textContent = msg || '';
+    document.getElementById('btn-prebake').disabled = !!busy;
+  }
+
+  /**
+   * Triggers a browser download from inside the sandboxed iframe.
+   * @param {string} filename File name.
+   * @param {string} mime MIME type.
+   * @param {string} content File body.
+   */
+  function download(filename, mime, content) {
+    var blob = new Blob([content], { type: mime + ';charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1500);
+  }
+
+  var API = {
+    init: init,
+    update: update,
+    toggle: toggle,
+    isOpen: isOpen,
+    showTab: showTab,
+    setConfig: setConfig,
+    prebakeProgress: prebakeProgress,
+    download: download
+  };
+  return API;
+})();
+</script>

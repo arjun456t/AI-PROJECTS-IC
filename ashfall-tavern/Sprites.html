@@ -1,0 +1,1285 @@
+<script>
+/**
+ * Sprites.html — procedural character rendering + animation.
+ *
+ * Zero image assets. Every pixel of every character is canvas primitives:
+ * arcs, ellipses, rects and quadratic curves. A character is described by a
+ * `spriteCfg` (palette / height / build / prop) and animated by blending
+ * between named pose constants.
+ *
+ * Allocation discipline: the animator owns a small set of pre-allocated pose
+ * objects and mutates them. Nothing in `update()` or `drawCharacter()` creates
+ * an object, an array or a string in the steady state.
+ */
+var Sprites = (function () {
+  'use strict';
+
+  var TAU = Math.PI * 2;
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 7.1  MATH + POSE MODEL
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Linear interpolation.
+   * @param {number} a Start.
+   * @param {number} b End.
+   * @param {number} t 0..1.
+   * @return {number} Interpolated value.
+   */
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  /**
+   * Clamps a number.
+   * @param {number} v Value.
+   * @param {number} lo Minimum.
+   * @param {number} hi Maximum.
+   * @return {number} Clamped value.
+   */
+  function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+  /**
+   * Quadratic ease in/out.
+   * @param {number} t 0..1.
+   * @return {number} Eased 0..1.
+   */
+  function easeInOutQuad(t) {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  }
+
+  /**
+   * Overshooting ease-out — gives one-shot actions their snap.
+   * @param {number} t 0..1.
+   * @return {number} Eased value, may exceed 1 mid-curve.
+   */
+  function easeOutBack(t) {
+    var c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+
+  /**
+   * Straight-through easing for clips that carry their own curve.
+   * @param {number} t 0..1.
+   * @return {number} t.
+   */
+  function easeLinear(t) { return t; }
+
+  /**
+   * Builds a pose, optionally patched by an override object. Nested joint
+   * objects are merged rather than replaced.
+   * @param {!Object=} over Partial pose.
+   * @return {!Object} A complete pose.
+   */
+  function makePose(over) {
+    var p = {
+      headY: 0, headTilt: 0, headTurn: 0,
+      torsoLean: 0, torsoTwist: 0,
+      armL: { shoulder: 0, elbow: 0 },
+      armR: { shoulder: 0, elbow: 0 },
+      legL: { hip: 0, knee: 0 },
+      legR: { hip: 0, knee: 0 },
+      bodyY: 0, bodyX: 0,
+      scaleY: 1, shakeAmp: 0
+    };
+    if (over) patchPose(p, over);
+    return p;
+  }
+
+  /**
+   * Applies a partial pose onto a full pose, in place.
+   * @param {!Object} target Full pose (mutated).
+   * @param {!Object} over Partial pose.
+   * @return {!Object} target.
+   */
+  function patchPose(target, over) {
+    for (var k in over) {
+      if (!Object.prototype.hasOwnProperty.call(over, k)) continue;
+      var v = over[k];
+      if (v && typeof v === 'object' && target[k] && typeof target[k] === 'object') {
+        for (var j in v) {
+          if (Object.prototype.hasOwnProperty.call(v, j)) target[k][j] = v[j];
+        }
+      } else if (typeof v === 'number') {
+        target[k] = v;
+      }
+    }
+    return target;
+  }
+
+  /**
+   * Deep copy of a pose.
+   * @param {!Object} p Source pose.
+   * @return {!Object} New pose.
+   */
+  function clonePose(p) {
+    var out = makePose();
+    copyPose(p, out);
+    return out;
+  }
+
+  /**
+   * Copies every numeric leaf from `src` into `dst`. No allocation.
+   * @param {!Object} src Source pose.
+   * @param {!Object} dst Destination pose (mutated).
+   * @return {!Object} dst.
+   */
+  function copyPose(src, dst) {
+    for (var k in dst) {
+      if (!Object.prototype.hasOwnProperty.call(dst, k)) continue;
+      var d = dst[k];
+      if (d && typeof d === 'object') {
+        var s = src[k];
+        if (s) for (var j in d) { if (typeof s[j] === 'number') d[j] = s[j]; }
+      } else if (typeof src[k] === 'number') {
+        dst[k] = src[k];
+      }
+    }
+    return dst;
+  }
+
+  /**
+   * Recursive deep lerp of every numeric leaf of two poses.
+   * @param {!Object} a Pose at t=0.
+   * @param {!Object} b Pose at t=1.
+   * @param {number} t Blend factor.
+   * @param {!Object=} out Destination pose; allocated when omitted.
+   * @return {!Object} The blended pose.
+   */
+  function blendPose(a, b, t, out) {
+    out = out || makePose();
+    for (var k in out) {
+      if (!Object.prototype.hasOwnProperty.call(out, k)) continue;
+      var o = out[k];
+      if (o && typeof o === 'object') {
+        var av = a[k], bv = b[k];
+        for (var j in o) {
+          var an = (av && typeof av[j] === 'number') ? av[j] : 0;
+          var bn = (bv && typeof bv[j] === 'number') ? bv[j] : 0;
+          o[j] = an + (bn - an) * t;
+        }
+      } else {
+        var a2 = (typeof a[k] === 'number') ? a[k] : 0;
+        var b2 = (typeof b[k] === 'number') ? b[k] : 0;
+        out[k] = a2 + (b2 - a2) * t;
+      }
+    }
+    return out;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 7.3  NAMED POSES
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  var NEUTRAL = makePose({
+    armL: { shoulder: 0.11, elbow: 0.20 },
+    armR: { shoulder: -0.09, elbow: 0.24 }
+  });
+
+  /**
+   * Derives a pose from a base pose plus an override.
+   * @param {!Object} base Base pose.
+   * @param {!Object} over Partial override.
+   * @return {!Object} New pose.
+   */
+  function from(base, over) {
+    return patchPose(clonePose(base), over);
+  }
+
+  /** @const {!Object<string, !Object>} */
+  var POSES = {
+    NEUTRAL: NEUTRAL,
+
+    WALK_A: from(NEUTRAL, {
+      legL: { hip: 0.46, knee: -0.10 }, legR: { hip: -0.40, knee: 0.36 },
+      armL: { shoulder: -0.42, elbow: 0.30 }, armR: { shoulder: 0.45, elbow: 0.26 },
+      torsoLean: 0.05, bodyY: -1.2, headY: -0.4
+    }),
+    WALK_B: from(NEUTRAL, {
+      legL: { hip: 0.06, knee: -0.04 }, legR: { hip: 0.04, knee: 0.46 },
+      armL: { shoulder: -0.10, elbow: 0.26 }, armR: { shoulder: 0.12, elbow: 0.28 },
+      torsoLean: 0.03, bodyY: 0.6
+    }),
+    WALK_C: from(NEUTRAL, {
+      legL: { hip: -0.40, knee: 0.36 }, legR: { hip: 0.46, knee: -0.10 },
+      armL: { shoulder: 0.45, elbow: 0.26 }, armR: { shoulder: -0.42, elbow: 0.30 },
+      torsoLean: 0.05, bodyY: -1.2, headY: -0.4
+    }),
+    WALK_D: from(NEUTRAL, {
+      legL: { hip: 0.04, knee: 0.46 }, legR: { hip: 0.06, knee: -0.04 },
+      armL: { shoulder: 0.12, elbow: 0.28 }, armR: { shoulder: -0.10, elbow: 0.26 },
+      torsoLean: 0.03, bodyY: 0.6
+    }),
+
+    LEAN_IN: from(NEUTRAL, {
+      torsoLean: 0.23, headY: -1.2, headTilt: 0.07, bodyX: 3,
+      armR: { shoulder: 0.26, elbow: 0.50 }, armL: { shoulder: -0.06, elbow: 0.34 }
+    }),
+    STEP_BACK: from(NEUTRAL, {
+      torsoLean: -0.19, bodyX: -7, headY: -1,
+      legL: { hip: 0.22, knee: 0.10 }, legR: { hip: -0.36, knee: 0.30 },
+      armL: { shoulder: -0.32, elbow: 0.62 }, armR: { shoulder: -0.37, elbow: 0.70 }
+    }),
+    TURN_AWAY: from(NEUTRAL, {
+      torsoTwist: 0.82, headTurn: -0.90, torsoLean: -0.05,
+      armR: { shoulder: 0.10, elbow: 0.32 }, armL: { shoulder: 0.06, elbow: 0.28 }
+    }),
+    GESTURE: from(NEUTRAL, {
+      armR: { shoulder: -0.95, elbow: -0.55 }, armL: { shoulder: 0.16, elbow: 0.30 },
+      torsoLean: 0.07, headTilt: -0.05, headY: -0.5
+    }),
+    ARMS_CROSSED: from(NEUTRAL, {
+      armL: { shoulder: 0.50, elbow: -2.00 }, armR: { shoulder: -0.50, elbow: 2.00 },
+      torsoLean: -0.04, headY: 0.4
+    }),
+    HEAD_BOW: from(NEUTRAL, {
+      headTilt: 0.42, headY: 2, torsoLean: 0.10
+    }),
+    RECOIL: from(NEUTRAL, {
+      bodyX: -6, bodyY: -2, torsoLean: -0.26, headTilt: -0.14,
+      legL: { hip: 0.26, knee: 0.14 }, legR: { hip: -0.30, knee: 0.34 },
+      armL: { shoulder: -0.50, elbow: 0.92 }, armR: { shoulder: -0.56, elbow: 0.96 }
+    }),
+    LAUGH_UP: from(NEUTRAL, {
+      headTilt: -0.34, torsoLean: -0.12, bodyY: -2.2,
+      armL: { shoulder: 0.30, elbow: 0.70 }, armR: { shoulder: -0.30, elbow: 0.80 }
+    }),
+    LAUGH_DOWN: from(NEUTRAL, {
+      headTilt: 0.20, torsoLean: 0.14, bodyY: 1.0,
+      armL: { shoulder: 0.24, elbow: 0.78 }, armR: { shoulder: -0.24, elbow: 0.88 }
+    }),
+    TENSE: from(NEUTRAL, {
+      torsoLean: 0.18, headY: -1, scaleY: 1.02,
+      armL: { shoulder: 0.28, elbow: -0.85 }, armR: { shoulder: -0.26, elbow: -0.90 },
+      legL: { hip: 0.12, knee: 0.06 }, legR: { hip: -0.12, knee: 0.06 }
+    })
+  };
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 7.4  ANIMATION CLIPS
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Builds a clip and precomputes its total duration.
+   * `durations[i]` is the time to travel from `frames[i]` to the next frame
+   * (wrapping to frame 0 for looping clips).
+   * @param {!Array<!Object>} frames Pose keyframes.
+   * @param {!Array<number>} durations Segment durations in ms.
+   * @param {boolean} loop Whether the clip repeats.
+   * @param {function(number):number=} easing Per-segment easing.
+   * @return {!Object} Clip.
+   */
+  function makeClip(frames, durations, loop, easing) {
+    var total = 0;
+    for (var i = 0; i < durations.length; i++) total += durations[i];
+    return {
+      frames: frames,
+      durations: durations,
+      loop: !!loop,
+      easing: easing || easeInOutQuad,
+      total: total
+    };
+  }
+
+  /**
+   * Generates the circular polishing motion.
+   * @return {!Object} The `polishing_mug` clip.
+   */
+  function buildPolishClip() {
+    var frames = [], durs = [], n = 8;
+    for (var i = 0; i < n; i++) {
+      var th = (i / n) * TAU;
+      frames.push(from(NEUTRAL, {
+        armR: { shoulder: -0.15 + Math.sin(th) * 0.35, elbow: 0.55 + Math.cos(th) * 0.50 },
+        armL: { shoulder: 0.20, elbow: 0.38 },
+        torsoLean: Math.sin(th) * 0.04,
+        torsoTwist: Math.cos(th) * 0.05,
+        headTilt: 0.07,
+        headTurn: 0.15,
+        bodyY: Math.sin(th * 2) * 0.4
+      }));
+      durs.push(1800 / n);
+    }
+    return makeClip(frames, durs, true, easeLinear);
+  }
+
+  /**
+   * Generates the swaying prayer motion, hands clasped at the chest.
+   * @return {!Object} The `praying` clip.
+   */
+  function buildPrayClip() {
+    var frames = [], durs = [], n = 8;
+    for (var i = 0; i < n; i++) {
+      var th = (i / n) * TAU;
+      frames.push(from(POSES.HEAD_BOW, {
+        // sharp elbow bend brings both hands up to the chest, clasped
+        armL: { shoulder: 0.66, elbow: -1.10 },
+        armR: { shoulder: 0.70, elbow: -1.15 },
+        bodyX: Math.sin(th) * 3,
+        bodyY: Math.sin(th * 2) * 0.8 - 0.4,
+        torsoLean: 0.10 + Math.sin(th) * 0.03,
+        torsoTwist: Math.sin(th) * 0.06,
+        headTilt: 0.42 + Math.sin(th * 2) * 0.03
+      }));
+      durs.push(3400 / n);
+    }
+    return makeClip(frames, durs, true, easeLinear);
+  }
+
+  /**
+   * Generates the broom sweep: right arm arcs -0.6 → 0.4, torso leans into
+   * each stroke, weight shifts onto the left leg.
+   * @return {!Object} The `sweeping` clip.
+   */
+  function buildSweepClip() {
+    var shoulders = [-0.60, -0.25, 0.10, 0.40, 0.05, -0.35];
+    var frames = [], durs = [];
+    for (var i = 0; i < shoulders.length; i++) {
+      var sh = shoulders[i];
+      frames.push(from(NEUTRAL, {
+        armR: { shoulder: sh, elbow: 0.50 - sh * 0.35 },
+        armL: { shoulder: sh * 0.45 + 0.10, elbow: 0.42 },
+        torsoLean: 0.06 + (0.40 - sh) * 0.12,
+        torsoTwist: sh * 0.10,
+        legL: { hip: sh * 0.14, knee: Math.abs(sh) * 0.10 },
+        legR: { hip: -sh * 0.06, knee: 0.04 },
+        headTilt: 0.18,
+        headTurn: 0.25,
+        bodyY: -Math.abs(sh) * 0.8
+      }));
+      durs.push(1600 / shoulders.length);
+    }
+    return makeClip(frames, durs, true, easeInOutQuad);
+  }
+
+  /**
+   * Builds the amused laugh: four shoulder shakes then a settle.
+   * @return {!Object} The `emo_amused` clip.
+   */
+  function buildLaughClip() {
+    var frames = [NEUTRAL], durs = [110];
+    for (var i = 0; i < 4; i++) {
+      frames.push(POSES.LAUGH_UP); durs.push(140);
+      frames.push(POSES.LAUGH_DOWN); durs.push(140);
+    }
+    frames.push(NEUTRAL);
+    durs.pop();
+    durs.push(170);
+    return makeClip(frames, durs, false, easeInOutQuad);
+  }
+
+  /** @const {!Object<string, !Object>} */
+  var CLIPS = {
+    idle: makeClip(
+      [NEUTRAL, from(NEUTRAL, { bodyY: -1.5, headY: -0.6, torsoLean: 0.012 })],
+      [1300, 1300], true, easeInOutQuad),
+
+    walk: makeClip(
+      [POSES.WALK_A, POSES.WALK_B, POSES.WALK_C, POSES.WALK_D],
+      [140, 140, 140, 140], true, easeInOutQuad),
+
+    interact: makeClip([NEUTRAL, POSES.LEAN_IN, NEUTRAL], [200, 200], false, easeOutBack),
+
+    polishing_mug: buildPolishClip(),
+    praying: buildPrayClip(),
+    sweeping: buildSweepClip(),
+
+    gesture: makeClip([NEUTRAL, POSES.GESTURE, NEUTRAL], [220, 380], false, easeOutBack),
+    step_back: makeClip([NEUTRAL, POSES.STEP_BACK, NEUTRAL], [180, 420], false, easeOutBack),
+    lean_in: makeClip([NEUTRAL, POSES.LEAN_IN, NEUTRAL], [200, 380], false, easeOutBack),
+    turn_away: makeClip([NEUTRAL, POSES.TURN_AWAY, NEUTRAL], [260, 440], false, easeOutBack),
+
+    emo_angry: makeClip(
+      [NEUTRAL, from(POSES.TENSE, { torsoLean: 0.18 }), from(POSES.TENSE, { torsoLean: 0.20 }), NEUTRAL],
+      [160, 700, 340], false, easeOutBack),
+    emo_afraid: makeClip(
+      [NEUTRAL, from(POSES.RECOIL, { headTilt: 0.30 }), from(POSES.RECOIL, { headTilt: 0.26, bodyX: -5 }), NEUTRAL],
+      [140, 700, 360], false, easeOutBack),
+    emo_warm: makeClip(
+      [NEUTRAL, from(NEUTRAL, { headTilt: 0.12, bodyY: -1.4 }), from(NEUTRAL, { headTilt: 0.13, bodyY: -0.6 }), NEUTRAL],
+      [220, 620, 360], false, easeInOutQuad),
+    emo_wary: makeClip(
+      [NEUTRAL, from(POSES.ARMS_CROSSED, { headTurn: 0.50 }), from(POSES.ARMS_CROSSED, { headTurn: 0.46 }), NEUTRAL],
+      [260, 640, 300], false, easeInOutQuad),
+    emo_amused: buildLaughClip()
+  };
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 7.5  EMOTION BODY LANGUAGE
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Per-emotion clip + render modifiers. `hold` is how long the performance
+   * runs before the animator eases back to the character's idle action.
+   * @const {!Object<string, !Object>}
+   */
+  var EMOTION_STATES = {
+    angry:   { clip: 'emo_angry',  hold: 1200, shakeAmp: 3.0, shakeHz: 26, bobScale: 1.0, warmShift: 0.12, mouth: -0.75, headTurn: 0,    bodyX: 0 },
+    afraid:  { clip: 'emo_afraid', hold: 1200, shakeAmp: 1.5, shakeHz: 18, bobScale: 1.0, warmShift: 0.00, mouth: -0.30, headTurn: 0,    bodyX: -6 },
+    warm:    { clip: 'emo_warm',   hold: 1200, shakeAmp: 0.0, shakeHz: 0,  bobScale: 1.6, warmShift: 0.04, mouth: 0.85,  headTurn: 0,    bodyX: 0 },
+    wary:    { clip: 'emo_wary',   hold: 1200, shakeAmp: 0.0, shakeHz: 0,  bobScale: 0.7, warmShift: 0.00, mouth: -0.18, headTurn: 0.50, bodyX: 0 },
+    amused:  { clip: 'emo_amused', hold: 1200, shakeAmp: 0.0, shakeHz: 0,  bobScale: 1.2, warmShift: 0.03, mouth: 1.00,  headTurn: 0,    bodyX: 0 },
+    neutral: { clip: null,         hold: 0,    shakeAmp: 0.0, shakeHz: 0,  bobScale: 1.0, warmShift: 0.00, mouth: 0.00,  headTurn: 0,    bodyX: 0 }
+  };
+
+  /**
+   * Maps a persona `idleAction` to its looping clip.
+   * @param {string} action Idle action name.
+   * @return {string} Clip name.
+   */
+  function idleClipFor(action) {
+    return CLIPS[action] ? action : 'idle';
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 7.6  ANIMATOR
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Creates an animator bound to one character's sprite config.
+   * Holds four pre-allocated poses and never allocates again.
+   * @param {!Object} spriteCfg Persona sprite config.
+   * @return {!Object} Animator.
+   */
+  function createAnimator(spriteCfg) {
+    var a = {
+      cfg: spriteCfg || {},
+      baseName: 'idle',
+      clipName: 'idle',
+      clip: CLIPS.idle,
+      loop: true,
+      time: 0,
+      finished: false,
+      onComplete: null,
+
+      blendTime: 0,
+      blendDur: 0,
+
+      current: makePose(),
+      _scratch: makePose(),
+      _blendFrom: makePose(),
+
+      blinking: false,
+      blinkTimer: 2600 + Math.random() * 2400,
+      blinkClose: 0,
+
+      emotion: 'neutral',
+      emotionTimer: 0,
+      mods: EMOTION_STATES.neutral,
+      elapsed: 0,
+      propAngle: 0,
+      propVel: 0
+    };
+    copyPose(NEUTRAL, a.current);
+    copyPose(NEUTRAL, a._scratch);
+
+    /**
+     * Starts a clip, cross-blending 180ms from wherever the body is now.
+     * @param {string} name Clip name.
+     * @param {!Object=} opts `{loop, onComplete, blend}`.
+     * @return {!Object} The animator, for chaining.
+     */
+    a.play = function (name, opts) {
+      var clip = CLIPS[name];
+      if (!clip) return a;
+      opts = opts || {};
+      copyPose(a.current, a._blendFrom);
+      a.blendDur = (typeof opts.blend === 'number') ? opts.blend : 180;
+      a.blendTime = 0;
+      a.clipName = name;
+      a.clip = clip;
+      a.loop = (typeof opts.loop === 'boolean') ? opts.loop : clip.loop;
+      a.time = 0;
+      a.finished = false;
+      a.onComplete = opts.onComplete || null;
+      return a;
+    };
+
+    /**
+     * Sets the clip the animator falls back to when a one-shot ends.
+     * @param {string} name Clip name.
+     * @param {boolean=} playNow Switch to it immediately.
+     * @return {!Object} The animator.
+     */
+    a.setBase = function (name, playNow) {
+      a.baseName = CLIPS[name] ? name : 'idle';
+      if (playNow) a.play(a.baseName, { loop: true });
+      return a;
+    };
+
+    /**
+     * Advances the animation and returns the live pose.
+     * @param {number} dt Milliseconds since the previous frame.
+     * @return {!Object} The current pose (the same object every frame).
+     */
+    a.update = function (dt) {
+      a.elapsed += dt;
+
+      // ── blink state machine ──────────────────────────────────────────
+      if (a.blinkClose > 0) {
+        a.blinkClose -= dt;
+        a.blinking = true;
+        if (a.blinkClose <= 0) {
+          a.blinking = false;
+          a.blinkTimer = 3000 + Math.random() * 2000;
+        }
+      } else {
+        a.blinkTimer -= dt;
+        if (a.blinkTimer <= 0) a.blinkClose = 120;
+      }
+
+      // ── emotion performance timer ────────────────────────────────────
+      if (a.emotionTimer > 0) {
+        a.emotionTimer -= dt;
+        if (a.emotionTimer <= 0) {
+          a.emotionTimer = 0;
+          a.emotion = 'neutral';
+          a.mods = EMOTION_STATES.neutral;
+          if (a.clipName !== a.baseName) a.play(a.baseName, { loop: true });
+        }
+      }
+
+      // ── clip time ────────────────────────────────────────────────────
+      a.time += dt;
+      var clip = a.clip;
+      var t = a.time;
+      if (a.loop) {
+        t = clip.total > 0 ? (t % clip.total) : 0;
+      } else if (t >= clip.total) {
+        t = clip.total;
+        if (!a.finished) {
+          a.finished = true;
+          var cb = a.onComplete;
+          a.onComplete = null;
+          if (cb) cb();
+          if (a.clipName !== a.baseName && a.emotionTimer <= 0) {
+            a.play(a.baseName, { loop: true });
+            clip = a.clip; t = 0;
+          }
+        }
+      }
+
+      // ── resolve the active segment ───────────────────────────────────
+      var i = 0, acc = 0, durs = clip.durations;
+      while (i < durs.length - 1 && t > acc + durs[i]) { acc += durs[i]; i++; }
+      var segT = durs[i] > 0 ? clamp((t - acc) / durs[i], 0, 1) : 1;
+      var fromPose = clip.frames[i];
+      var toPose = clip.frames[(i + 1) % clip.frames.length];
+      if (!clip.loop && i + 1 >= clip.frames.length) toPose = fromPose;
+
+      blendPose(fromPose, toPose, clip.easing(segT), a._scratch);
+
+      // ── cross-blend into the previous pose ───────────────────────────
+      if (a.blendTime < a.blendDur) {
+        a.blendTime += dt;
+        var bt = easeInOutQuad(clamp(a.blendTime / a.blendDur, 0, 1));
+        blendPose(a._blendFrom, a._scratch, bt, a.current);
+      } else {
+        copyPose(a._scratch, a.current);
+      }
+
+      // ── emotion modifiers layered on top ─────────────────────────────
+      var m = a.mods;
+      if (m.bobScale !== 1) a.current.bodyY *= m.bobScale;
+      if (m.bodyX) a.current.bodyX += m.bodyX * (a.emotionTimer > 0 ? 1 : 0);
+      if (m.headTurn) a.current.headTurn += m.headTurn * (a.emotionTimer > 0 ? 1 : 0);
+      a.current.shakeAmp = (a.emotionTimer > 0) ? m.shakeAmp : 0;
+
+      // ── prop inertia: the censer lags the arm by ~0.15s ──────────────
+      var armAngle = a.current.armR.shoulder + a.current.armR.elbow;
+      a.propAngle += (armAngle - a.propAngle) * clamp(dt / 150, 0, 1);
+
+      return a.current;
+    };
+
+    return a;
+  }
+
+  /**
+   * Triggers an emotion performance on an entity.
+   * @param {!Object} entity Entity with `.animator`.
+   * @param {string} emotion One of the EMOTION_STATES keys.
+   * @return {boolean} True when the emotion was applied.
+   */
+  function setEmotion(entity, emotion) {
+    if (!entity || !entity.animator) return false;
+    var state = EMOTION_STATES[emotion] || EMOTION_STATES.neutral;
+    var a = entity.animator;
+    entity.emotion = emotion;
+    a.emotion = emotion;
+    a.mods = state;
+    a.emotionTimer = state.hold;
+    if (state.clip) {
+      a.play(state.clip, { loop: false });
+    } else {
+      a.play(a.baseName, { loop: true });
+    }
+    return true;
+  }
+
+  /**
+   * Plays a one-shot action clip, returning to the base clip afterwards.
+   * @param {!Object} entity Entity with `.animator`.
+   * @param {string} actionName One of gesture|step_back|lean_in|turn_away|interact|none.
+   * @return {boolean} True when a clip was started.
+   */
+  function playAction(entity, actionName) {
+    if (!entity || !entity.animator) return false;
+    if (!actionName || actionName === 'none' || !CLIPS[actionName]) return false;
+    entity.animator.play(actionName, { loop: false });
+    return true;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 7.2  CHARACTER RENDERING
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Skeleton proportions per build. Lengths are in local units; a character's
+   * final size is these times `spriteCfg.height` times the build multiplier.
+   * @const {!Object<string, !Object>}
+   */
+  var BUILDS = {
+    stocky: { torsoW: 26, limbW: 7.0, heightMul: 1.00, headR: 10.5, shoulderW: 13.5, hipW: 15.0 },
+    slight: { torsoW: 17, limbW: 5.0, heightMul: 1.00, headR: 9.0,  shoulderW: 9.5,  hipW: 11.0 },
+    tall:   { torsoW: 20, limbW: 5.5, heightMul: 1.08, headR: 9.5,  shoulderW: 11.0, hipW: 12.0 }
+  };
+
+  var LEG_UPPER = 21, LEG_LOWER = 21, TORSO_H = 34, NECK = 5;
+  var ARM_UPPER = 18, ARM_LOWER = 17;
+
+  var _colorCache = {};
+  var _paletteCache = {};
+
+  /**
+   * Shifts a hex colour's brightness and warmth. Results are memoised, so the
+   * render loop never builds a string after the first frame of a given tint.
+   * @param {string} hex `#rrggbb`.
+   * @param {number} shade -1..1 brightness delta.
+   * @param {number} warm 0..1 red push.
+   * @return {string} `#rrggbb`.
+   */
+  function tint(hex, shade, warm) {
+    var key = hex + '|' + shade.toFixed(2) + '|' + warm.toFixed(2);
+    var hit = _colorCache[key];
+    if (hit) return hit;
+
+    var n = parseInt(hex.slice(1), 16);
+    var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    if (shade >= 0) {
+      r = r + (255 - r) * shade; g = g + (255 - g) * shade; b = b + (255 - b) * shade;
+    } else {
+      r = r * (1 + shade); g = g * (1 + shade); b = b * (1 + shade);
+    }
+    if (warm) {
+      r = r + (255 - r) * warm;
+      g = g * (1 - warm * 0.25);
+      b = b * (1 - warm * 0.45);
+    }
+    var out = '#' +
+      ('0' + Math.round(clamp(r, 0, 255)).toString(16)).slice(-2) +
+      ('0' + Math.round(clamp(g, 0, 255)).toString(16)).slice(-2) +
+      ('0' + Math.round(clamp(b, 0, 255)).toString(16)).slice(-2);
+    _colorCache[key] = out;
+    return out;
+  }
+
+  /**
+   * Resolves a full render palette (base + shaded variants) for a sprite,
+   * memoised on the palette identity and warm-shift amount.
+   * @param {!Object} pal Persona palette.
+   * @param {number} warm Warm shift 0..1.
+   * @return {!Object} Render palette.
+   */
+  function paletteFor(pal, warm) {
+    var w = Math.round(warm * 20) / 20;
+    var key = pal.skin + pal.cloth + pal.accent + pal.hair + pal.trim + '|' + w;
+    var hit = _paletteCache[key];
+    if (hit) return hit;
+    var out = {
+      skin: tint(pal.skin, 0, w),
+      skinDark: tint(pal.skin, -0.22, w),
+      cloth: tint(pal.cloth, 0, w),
+      clothDark: tint(pal.cloth, -0.30, w),
+      // Near limbs are lifted and far limbs pushed down against the torso, so
+      // arms and legs read as separate volumes instead of one silhouette.
+      clothLight: tint(pal.cloth, 0.18, w),
+      leg: tint(pal.accent, -0.06, w),
+      legDark: tint(pal.accent, -0.38, w),
+      boot: tint(pal.cloth, -0.55, w),
+      accent: tint(pal.accent, 0, w),
+      accentDark: tint(pal.accent, -0.25, w),
+      hair: tint(pal.hair, 0, w),
+      hairDark: tint(pal.hair, -0.25, w),
+      trim: tint(pal.trim, 0, w),
+      ink: tint('#1a1410', 0, w * 0.5)
+    };
+    _paletteCache[key] = out;
+    return out;
+  }
+
+  // Scratch values for limb endpoints — reused so drawing allocates nothing.
+  var _jx = 0, _jy = 0, _ex = 0, _ey = 0;
+
+  /**
+   * Draws a two-segment limb. The upper segment swings from the joint origin
+   * by `a1`; the lower swings from the elbow/knee by the cumulative angle
+   * `a1 + a2`. Angle 0 points straight down.
+   * Writes the joint and end positions into module scratch vars.
+   * @param {!CanvasRenderingContext2D} ctx Target context.
+   * @param {number} ox Origin x.
+   * @param {number} oy Origin y.
+   * @param {number} upper Upper segment length.
+   * @param {number} lower Lower segment length.
+   * @param {number} a1 Shoulder/hip angle.
+   * @param {number} a2 Elbow/knee angle, relative to the upper segment.
+   * @param {number} w Stroke width.
+   * @param {string} color Stroke colour.
+   */
+  function drawLimb(ctx, ox, oy, upper, lower, a1, a2, w, color) {
+    _jx = ox + Math.sin(a1) * upper;
+    _jy = oy + Math.cos(a1) * upper;
+    var a3 = a1 + a2;
+    _ex = _jx + Math.sin(a3) * lower;
+    _ey = _jy + Math.cos(a3) * lower;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = w;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(ox, oy);
+    ctx.lineTo(_jx, _jy);
+    ctx.lineTo(_ex, _ey);
+    ctx.stroke();
+  }
+
+  /**
+   * Draws a boot at a foot position.
+   * @param {!CanvasRenderingContext2D} ctx Context.
+   * @param {number} x Foot x.
+   * @param {number} y Foot y.
+   * @param {number} w Limb width.
+   * @param {string} color Boot colour.
+   */
+  function drawFoot(ctx, x, y, w, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(x + w * 0.25, y + w * 0.10, w * 0.85, w * 0.48, 0, 0, TAU);
+    ctx.fill();
+  }
+
+  /**
+   * Draws the tapered cloth torso with a trim stripe.
+   * @param {!CanvasRenderingContext2D} ctx Context.
+   * @param {number} hx Hip centre x.
+   * @param {number} hy Hip centre y.
+   * @param {number} sx Shoulder centre x.
+   * @param {number} sy Shoulder centre y.
+   * @param {number} wTop Shoulder width.
+   * @param {!Object} pal Render palette.
+   */
+  function drawTorso(ctx, hx, hy, sx, sy, wTop, pal) {
+    var wBot = wTop * 0.76;
+    var midY = (sy + hy) / 2;
+
+    ctx.fillStyle = pal.cloth;
+    ctx.beginPath();
+    ctx.moveTo(sx - wTop / 2, sy);
+    ctx.quadraticCurveTo(sx - wTop * 0.60, midY, hx - wBot / 2, hy);
+    ctx.lineTo(hx + wBot / 2, hy);
+    ctx.quadraticCurveTo(sx + wTop * 0.60, midY, sx + wTop / 2, sy);
+    ctx.closePath();
+    ctx.fill();
+
+    // shaded far side
+    ctx.fillStyle = pal.clothDark;
+    ctx.beginPath();
+    ctx.moveTo(sx - wTop / 2, sy);
+    ctx.quadraticCurveTo(sx - wTop * 0.60, midY, hx - wBot / 2, hy);
+    ctx.lineTo(hx - wBot * 0.12, hy);
+    ctx.quadraticCurveTo(sx - wTop * 0.10, midY, sx - wTop * 0.10, sy);
+    ctx.closePath();
+    ctx.fill();
+
+    // trim stripe across the chest
+    ctx.strokeStyle = pal.trim;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(sx - wTop * 0.42, sy + (hy - sy) * 0.30);
+    ctx.quadraticCurveTo(sx, sy + (hy - sy) * 0.36, hx + wBot * 0.42, hy - (hy - sy) * 0.62);
+    ctx.stroke();
+
+    // belt
+    ctx.fillStyle = pal.accentDark;
+    ctx.fillRect(hx - wBot * 0.54, hy - 4, wBot * 1.08, 3.4);
+  }
+
+  /**
+   * Draws head, hair and face.
+   * @param {!CanvasRenderingContext2D} ctx Context.
+   * @param {number} cx Head centre x.
+   * @param {number} cy Head centre y.
+   * @param {number} r Head radius.
+   * @param {number} tilt Head tilt in radians.
+   * @param {number} turn Head turn, -1..1.
+   * @param {!Object} pal Render palette.
+   * @param {number} mouth Mouth curvature, -1 frown .. 1 smile.
+   * @param {boolean} blinking Whether the eyes are shut.
+   */
+  function drawHead(ctx, cx, cy, r, tilt, turn, pal, mouth, blinking) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(tilt);
+
+    // neck shadow
+    ctx.fillStyle = pal.skinDark;
+    ctx.beginPath();
+    ctx.ellipse(0, r * 0.86, r * 0.36, r * 0.30, 0, 0, TAU);
+    ctx.fill();
+
+    // skull
+    ctx.fillStyle = pal.skin;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r, r * 1.12, 0, 0, TAU);
+    ctx.fill();
+
+    // cheek shading on the far side — a hint of form, not a second face
+    var ga = ctx.globalAlpha;
+    ctx.fillStyle = pal.skinDark;
+    ctx.globalAlpha = ga * 0.55;
+    ctx.beginPath();
+    ctx.ellipse(-r * 0.66, r * 0.10, r * 0.34, r * 0.78, 0, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = ga;
+
+    // hair: crown sweep + fringe
+    ctx.fillStyle = pal.hair;
+    ctx.beginPath();
+    ctx.moveTo(-r * 1.02, -r * 0.12);
+    ctx.quadraticCurveTo(-r * 1.05, -r * 1.30, 0, -r * 1.24);
+    ctx.quadraticCurveTo(r * 1.06, -r * 1.26, r * 1.00, -r * 0.06);
+    ctx.quadraticCurveTo(r * 0.72, -r * 0.62, r * 0.16, -r * 0.60);
+    ctx.quadraticCurveTo(-r * 0.44, -r * 0.58, -r * 1.02, -r * 0.12);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = pal.hairDark;
+    ctx.beginPath();
+    ctx.moveTo(-r * 1.02, -r * 0.12);
+    ctx.quadraticCurveTo(-r * 0.96, -r * 0.98, -r * 0.30, -r * 1.18);
+    ctx.quadraticCurveTo(-r * 0.70, -r * 0.72, -r * 0.62, -r * 0.34);
+    ctx.closePath();
+    ctx.fill();
+
+    // face — eyes shift with headTurn so the character reads as looking
+    var ex = turn * r * 0.30;
+    var eyeY = r * 0.06;
+    var nearX = r * 0.34 + ex;
+    var farX = -r * 0.30 + ex;
+
+    ctx.strokeStyle = pal.ink;
+    ctx.lineCap = 'round';
+    if (blinking) {
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(nearX - r * 0.16, eyeY); ctx.lineTo(nearX + r * 0.16, eyeY);
+      ctx.moveTo(farX - r * 0.14, eyeY); ctx.lineTo(farX + r * 0.14, eyeY);
+      ctx.stroke();
+    } else {
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(nearX, eyeY, r * 0.15, Math.PI * 0.08, Math.PI * 0.92, true);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(farX, eyeY, r * 0.13, Math.PI * 0.08, Math.PI * 0.92, true);
+      ctx.stroke();
+    }
+
+    // brows tilt with the mouth curve — the cheapest emotional signal there is
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(nearX - r * 0.17, eyeY - r * 0.30 + mouth * r * 0.05);
+    ctx.lineTo(nearX + r * 0.17, eyeY - r * 0.34 - mouth * r * 0.07);
+    ctx.moveTo(farX - r * 0.15, eyeY - r * 0.30 - mouth * r * 0.06);
+    ctx.lineTo(farX + r * 0.15, eyeY - r * 0.33 + mouth * r * 0.04);
+    ctx.stroke();
+
+    // mouth
+    var my = r * 0.52;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(ex - r * 0.26, my);
+    ctx.quadraticCurveTo(ex, my + mouth * r * 0.34, ex + r * 0.28, my);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  /**
+   * Draws the character's held prop at the near hand.
+   * @param {!CanvasRenderingContext2D} ctx Context.
+   * @param {string} prop mug|censer|broom|none.
+   * @param {number} hx Hand x.
+   * @param {number} hy Hand y.
+   * @param {number} armAngle Cumulative forearm angle.
+   * @param {number} lagAngle Inertia-lagged angle for swinging props.
+   * @param {!Object} pal Render palette.
+   */
+  function drawProp(ctx, prop, hx, hy, armAngle, lagAngle, pal) {
+    if (!prop || prop === 'none') return;
+
+    if (prop === 'mug') {
+      ctx.save();
+      ctx.translate(hx, hy);
+      ctx.rotate(armAngle * 0.35);
+      ctx.fillStyle = pal.accentDark;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(-3.6, -4.5, 7.2, 9, 1.6);
+      } else {
+        ctx.rect(-3.6, -4.5, 7.2, 9);
+      }
+      ctx.fill();
+      ctx.fillStyle = pal.trim;
+      ctx.fillRect(-3.6, -4.5, 7.2, 1.6);
+      ctx.strokeStyle = pal.accentDark;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(4.2, 0, 2.6, -Math.PI * 0.5, Math.PI * 0.5);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    if (prop === 'censer') {
+      // chains hang from the hand; the bowl lags the arm for weight
+      var swing = lagAngle * 0.9;
+      var chainLen = 13;
+      var bx = hx + Math.sin(swing) * chainLen;
+      var by = hy + Math.cos(swing) * chainLen;
+
+      ctx.strokeStyle = pal.trim;
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(hx - 1.6, hy); ctx.lineTo(bx - 1.2, by);
+      ctx.moveTo(hx + 1.6, hy); ctx.lineTo(bx + 1.2, by);
+      ctx.stroke();
+
+      ctx.fillStyle = pal.trim;
+      ctx.beginPath();
+      ctx.ellipse(bx, by + 1.5, 4.2, 3.4, swing * 0.4, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = pal.accentDark;
+      ctx.beginPath();
+      ctx.ellipse(bx, by - 0.6, 4.0, 1.5, swing * 0.4, 0, TAU);
+      ctx.fill();
+
+      // ember glow
+      ctx.fillStyle = 'rgba(255,150,60,0.55)';
+      ctx.beginPath();
+      ctx.arc(bx, by - 0.4, 1.7, 0, TAU);
+      ctx.fill();
+      return;
+    }
+
+    if (prop === 'broom') {
+      var ang = armAngle + 0.55;
+      var sx2 = hx - Math.sin(ang) * 9;
+      var sy2 = hy - Math.cos(ang) * 9;
+      var ex2 = hx + Math.sin(ang) * 24;
+      var ey2 = hy + Math.cos(ang) * 24;
+
+      ctx.strokeStyle = pal.accentDark;
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sx2, sy2);
+      ctx.lineTo(ex2, ey2);
+      ctx.stroke();
+
+      // bristle fan
+      ctx.strokeStyle = pal.trim;
+      ctx.lineWidth = 1.0;
+      ctx.beginPath();
+      for (var i = -3; i <= 3; i++) {
+        var spread = i * 0.13;
+        ctx.moveTo(ex2, ey2);
+        ctx.lineTo(ex2 + Math.sin(ang + spread) * 8, ey2 + Math.cos(ang + spread) * 8);
+      }
+      ctx.stroke();
+      return;
+    }
+  }
+
+  var _emptyOpts = {};
+
+  /**
+   * Draws one character. `(x, y)` is the point between the feet.
+   *
+   * Layer order, back to front: far leg, far arm, torso, near leg, near arm,
+   * head, hair, face, prop — so limbs overlap correctly at any pose.
+   *
+   * @param {!CanvasRenderingContext2D} ctx Target context.
+   * @param {number} x Ground x.
+   * @param {number} y Ground y.
+   * @param {!Object} pose Current pose.
+   * @param {!Object} spriteCfg Persona sprite config.
+   * @param {!Object=} opts `{facing, emotion, blinking, mouth, warmShift,
+   *     time, shakeHz, propAngle, alpha}`.
+   */
+  function drawCharacter(ctx, x, y, pose, spriteCfg, opts) {
+    opts = opts || _emptyOpts;
+    var cfg = spriteCfg || {};
+    var b = BUILDS[cfg.build] || BUILDS.slight;
+    var s = (cfg.height || 1) * b.heightMul;
+    var facing = opts.facing || 1;
+    var pal = paletteFor(cfg.palette || {
+      skin: '#c08a63', cloth: '#4a3b2c', accent: '#7a5a35', hair: '#3a3129', trim: '#8d6b3a'
+    }, opts.warmShift || 0);
+
+    // ── shake offset (spec 7.2: folded into the root transform) ─────────
+    var shX = 0, shY = 0;
+    if (pose.shakeAmp > 0.01) {
+      var tt = (opts.time || 0) / 1000;
+      var hz = opts.shakeHz || 20;
+      shX = Math.sin(tt * hz * TAU) * pose.shakeAmp;
+      shY = Math.cos(tt * hz * TAU * 0.73) * pose.shakeAmp * 0.35;
+    }
+
+    // ── ground shadow, unmirrored, alpha fading as the body lifts ───────
+    var lift = pose.bodyY < 0 ? -pose.bodyY : 0;
+    ctx.save();
+    ctx.globalAlpha = clamp(0.30 - lift * 0.035, 0.07, 0.30) * (opts.alpha === undefined ? 1 : opts.alpha);
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 1.5, 15 * s, 4.4 * s, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    if (opts.alpha !== undefined) ctx.globalAlpha = opts.alpha;
+    ctx.translate(x + (pose.bodyX + shX) * s, y + (pose.bodyY + shY) * s);
+    ctx.scale(facing * s, (pose.scaleY || 1) * s);
+
+    var hipY = -(LEG_UPPER + LEG_LOWER);
+    var lean = pose.torsoLean;
+    var twist = pose.torsoTwist || 0;
+    var shX2 = Math.sin(lean) * TORSO_H;
+    var shY2 = hipY - Math.cos(lean) * TORSO_H;
+    var shoulderW = b.shoulderW * Math.cos(twist);
+    var hipW = b.hipW;
+    var limbW = b.limbW;
+
+    // 1. far leg
+    drawLimb(ctx, -hipW * 0.5 - 1.2, hipY, LEG_UPPER, LEG_LOWER,
+             pose.legL.hip, pose.legL.knee, limbW, pal.legDark);
+    drawFoot(ctx, _ex, _ey, limbW, tint(pal.boot, -0.15, 0));
+
+    // 2. far arm
+    drawLimb(ctx, shX2 - shoulderW * 0.55 - 1.0, shY2, ARM_UPPER, ARM_LOWER,
+             pose.armL.shoulder, pose.armL.elbow, limbW * 0.92, pal.clothDark);
+    var farHandX = _ex, farHandY = _ey;
+    ctx.fillStyle = pal.skinDark;
+    ctx.beginPath();
+    ctx.arc(farHandX, farHandY, limbW * 0.52, 0, TAU);
+    ctx.fill();
+
+    // 3. torso
+    drawTorso(ctx, 0, hipY, shX2, shY2, b.torsoW * Math.max(0.55, Math.cos(twist * 0.8)), pal);
+
+    // 4. near leg
+    drawLimb(ctx, hipW * 0.5, hipY, LEG_UPPER, LEG_LOWER,
+             pose.legR.hip, pose.legR.knee, limbW, pal.leg);
+    drawFoot(ctx, _ex, _ey, limbW, pal.boot);
+
+    // 5. near arm
+    drawLimb(ctx, shX2 + shoulderW * 0.55, shY2, ARM_UPPER, ARM_LOWER,
+             pose.armR.shoulder, pose.armR.elbow, limbW, pal.clothLight);
+    var handX = _ex, handY = _ey;
+    ctx.fillStyle = pal.skin;
+    ctx.beginPath();
+    ctx.arc(handX, handY, limbW * 0.55, 0, TAU);
+    ctx.fill();
+
+    // 6-8. head + hair + face
+    var headR = b.headR;
+    var headCX = shX2 + Math.sin(lean + pose.headTilt * 0.35) * (NECK + headR * 0.9) + pose.headTurn * 1.6;
+    var headCY = shY2 - Math.cos(lean + pose.headTilt * 0.35) * (NECK + headR * 0.9) + pose.headY;
+    ctx.strokeStyle = pal.skinDark;
+    ctx.lineWidth = limbW * 0.75;
+    ctx.beginPath();
+    ctx.moveTo(shX2, shY2);
+    ctx.lineTo(headCX, headCY + headR * 0.7);
+    ctx.stroke();
+    drawHead(ctx, headCX, headCY, headR, pose.headTilt, pose.headTurn, pal,
+             opts.mouth || 0, !!opts.blinking);
+
+    // 9. prop, in the near hand
+    drawProp(ctx, cfg.prop, handX, handY,
+             pose.armR.shoulder + pose.armR.elbow,
+             (opts.propAngle === undefined ? pose.armR.shoulder + pose.armR.elbow : opts.propAngle),
+             pal);
+
+    ctx.restore();
+  }
+
+  /**
+   * Draws a head-and-shoulders portrait for HUD use, at an arbitrary size.
+   * @param {!CanvasRenderingContext2D} ctx Context.
+   * @param {number} x Centre x.
+   * @param {number} y Centre y.
+   * @param {number} size Portrait diameter in px.
+   * @param {!Object} spriteCfg Persona sprite config.
+   * @param {number=} mouth Mouth curvature.
+   */
+  function drawPortrait(ctx, x, y, size, spriteCfg, mouth) {
+    var cfg = spriteCfg || {};
+    var b = BUILDS[cfg.build] || BUILDS.slight;
+    var pal = paletteFor(cfg.palette || {
+      skin: '#c08a63', cloth: '#4a3b2c', accent: '#7a5a35', hair: '#3a3129', trim: '#8d6b3a'
+    }, 0);
+    var s = size / (b.headR * 3.2);
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+
+    // shoulders
+    ctx.fillStyle = pal.cloth;
+    ctx.beginPath();
+    ctx.moveTo(-b.torsoW * 0.62, b.headR * 2.2);
+    ctx.quadraticCurveTo(0, b.headR * 0.75, b.torsoW * 0.62, b.headR * 2.2);
+    ctx.closePath();
+    ctx.fill();
+
+    drawHead(ctx, 0, 0, b.headR, 0, 0, pal, mouth || 0, false);
+    ctx.restore();
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 7.7  AMBIENT PARTICLE HELPERS
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Draws one drifting dust mote.
+   * @param {!CanvasRenderingContext2D} ctx Context.
+   * @param {!Object} mote `{x, y, alpha, phase, size}`.
+   */
+  function drawDustMote(ctx, mote) {
+    var a = mote.alpha * (0.55 + 0.45 * Math.sin(mote.phase));
+    if (a <= 0.01) return;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#e6d3ac';
+    ctx.beginPath();
+    ctx.arc(mote.x, mote.y, mote.size || 1.4, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Draws an expanding footstep puff. Life runs 400ms → 0.
+   * @param {!CanvasRenderingContext2D} ctx Context.
+   * @param {!Object} puff `{x, y, life}`.
+   */
+  function drawFootstepPuff(ctx, puff) {
+    if (puff.life <= 0) return;
+    var t = 1 - puff.life / 400;
+    var r = 2 + t * 9;
+    ctx.globalAlpha = (1 - t) * 0.28;
+    ctx.strokeStyle = '#b9a684';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.arc(puff.x, puff.y, r, Math.PI * 0.15, Math.PI * 0.85);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Draws the "thinking" bubble shown while a generation request is in flight.
+   * Three dots fade in sequence on a 900ms loop.
+   * @param {!CanvasRenderingContext2D} ctx Context.
+   * @param {number} x Anchor x (character centre).
+   * @param {number} y Anchor y (above the head).
+   * @param {number} t Elapsed milliseconds.
+   */
+  function drawThinkingBubble(ctx, x, y, t) {
+    var w = 34, h = 18, r = 7;
+    ctx.save();
+
+    ctx.fillStyle = 'rgba(232,220,196,0.93)';
+    ctx.strokeStyle = 'rgba(60,44,30,0.85)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2 + r, y - h / 2);
+    ctx.lineTo(x + w / 2 - r, y - h / 2);
+    ctx.quadraticCurveTo(x + w / 2, y - h / 2, x + w / 2, y - h / 2 + r);
+    ctx.lineTo(x + w / 2, y + h / 2 - r);
+    ctx.quadraticCurveTo(x + w / 2, y + h / 2, x + w / 2 - r, y + h / 2);
+    ctx.lineTo(x - w / 2 + r, y + h / 2);
+    ctx.quadraticCurveTo(x - w / 2, y + h / 2, x - w / 2, y + h / 2 - r);
+    ctx.lineTo(x - w / 2, y - h / 2 + r);
+    ctx.quadraticCurveTo(x - w / 2, y - h / 2, x - w / 2 + r, y - h / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // tail
+    ctx.beginPath();
+    ctx.arc(x - 6, y + h / 2 + 4, 2.6, 0, TAU);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x - 10, y + h / 2 + 9, 1.6, 0, TAU);
+    ctx.fill();
+    ctx.stroke();
+
+    // three dots fading in sequence
+    var phase = (t % 900) / 900;
+    for (var i = 0; i < 3; i++) {
+      var local = phase - i * 0.22;
+      if (local < 0) local += 1;
+      var a = 0.25 + 0.75 * Math.max(0, Math.sin(local * Math.PI));
+      ctx.globalAlpha = a;
+      ctx.fillStyle = '#3c2c1e';
+      ctx.beginPath();
+      ctx.arc(x - 8 + i * 8, y, 2.1, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════ */
+
+  return {
+    // math
+    lerp: lerp,
+    clamp: clamp,
+    easeInOutQuad: easeInOutQuad,
+    easeOutBack: easeOutBack,
+    easeLinear: easeLinear,
+    // pose model
+    makePose: makePose,
+    clonePose: clonePose,
+    copyPose: copyPose,
+    blendPose: blendPose,
+    POSES: POSES,
+    CLIPS: CLIPS,
+    EMOTION_STATES: EMOTION_STATES,
+    BUILDS: BUILDS,
+    idleClipFor: idleClipFor,
+    // animation
+    createAnimator: createAnimator,
+    setEmotion: setEmotion,
+    playAction: playAction,
+    // rendering
+    drawCharacter: drawCharacter,
+    drawPortrait: drawPortrait,
+    tint: tint,
+    // particles
+    drawDustMote: drawDustMote,
+    drawFootstepPuff: drawFootstepPuff,
+    drawThinkingBubble: drawThinkingBubble
+  };
+})();
+</script>

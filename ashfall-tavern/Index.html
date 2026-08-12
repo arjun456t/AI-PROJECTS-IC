@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <title><?= appTitle ?></title>
+  <?!= include('Styles') ?>
+</head>
+<body>
+
+<div id="app">
+  <div id="stage">
+
+    <canvas id="game" width="900" height="600"></canvas>
+
+    <div id="titlebar">
+      Ashfall Tavern
+      <small>NPC dialogue engine &middot; v<?= appVersion ?></small>
+    </div>
+
+    <!-- relationship HUD -->
+    <div id="hud">
+      <h4>Standing</h4>
+      <div id="hud-rows"></div>
+    </div>
+
+    <div id="hints">
+      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move
+      &nbsp;·&nbsp; <kbd>E</kbd> talk
+      &nbsp;·&nbsp; <kbd>Esc</kbd> leave
+      &nbsp;·&nbsp; <kbd>~</kbd> engine panel
+    </div>
+
+    <!-- dialogue box -->
+    <div id="dialogue">
+      <div class="dlg-frame">
+        <div class="dlg-head">
+          <span class="dlg-name" id="dlg-name">—</span>
+          <span class="dlg-role" id="dlg-role"></span>
+          <span class="mood-badge mood-neutral" id="dlg-mood">neutral</span>
+        </div>
+        <div class="dlg-line" id="dlg-line"></div>
+        <div class="dlg-choices" id="dlg-choices"></div>
+        <div class="dlg-status" id="dlg-status"></div>
+      </div>
+    </div>
+
+    <!-- dev panel -->
+    <div id="dev">
+      <div class="dev-head">
+        <b>Engine</b>
+        <span>prompt &middot; retrieval &middot; guardrails &middot; export</span>
+        <span class="close" id="dev-close">✕</span>
+      </div>
+
+      <div class="metrics">
+        <div class="metric"><div class="k">latency</div><div class="v" id="m-latency">0 <small>ms</small></div></div>
+        <div class="metric"><div class="k">tokens</div><div class="v" id="m-tokens">0 <small>tok</small></div></div>
+        <div class="metric"><div class="k">cost</div><div class="v" id="m-cost">$0.00 <small>/1k</small></div></div>
+        <div class="metric"><div class="k">render</div><div class="v" id="m-fps">60 <small>fps</small></div></div>
+      </div>
+
+      <div class="dev-tabs" id="dev-tabs">
+        <button class="dev-tab active" data-tab="prompt">Prompt</button>
+        <button class="dev-tab" data-tab="response">Response</button>
+        <button class="dev-tab" data-tab="lore">Retrieval</button>
+        <button class="dev-tab" data-tab="guard">Guardrails<span class="pill" id="viol-count" style="display:none">0</span></button>
+        <button class="dev-tab" data-tab="state">State</button>
+      </div>
+
+      <div class="dev-body">
+        <div class="dev-pane active" id="pane-prompt"><pre>Talk to someone to capture a prompt.</pre></div>
+        <div class="dev-pane" id="pane-response"><pre>No response captured yet.</pre></div>
+        <div class="dev-pane" id="pane-lore"><pre>No retrieval yet.</pre></div>
+        <div class="dev-pane" id="pane-guard"><pre>No guardrail activity yet.</pre></div>
+        <div class="dev-pane" id="pane-state"><pre>—</pre></div>
+      </div>
+
+      <div class="dev-foot">
+        <div class="btn-row">
+          <button class="btn" data-export="json">Export JSON</button>
+          <button class="btn" data-export="csv">Export CSV</button>
+          <button class="btn" data-export="yarn">Export Yarn</button>
+        </div>
+
+        <div class="cfg-row">
+          <label>Pre-bake</label>
+          <select id="cfg-npc"></select>
+          <select id="cfg-depth">
+            <option value="1">depth 1</option>
+            <option value="2">depth 2</option>
+            <option value="3" selected>depth 3</option>
+            <option value="4">depth 4</option>
+          </select>
+        </div>
+        <div class="btn-row" style="margin-top:6px">
+          <button class="btn primary" id="btn-prebake">Bake tree</button>
+          <button class="btn" id="btn-cleartree">Clear tree</button>
+        </div>
+        <div class="prebake-bar" id="prebake-bar"><i></i></div>
+        <div class="dev-note" id="prebake-msg" style="margin-top:4px"></div>
+
+        <div class="cfg-row" style="margin-top:12px">
+          <label>Rating</label>
+          <select id="cfg-tier">
+            <option value="E">E &middot; everyone</option>
+            <option value="T" selected>T &middot; teen</option>
+            <option value="M">M &middot; mature</option>
+          </select>
+        </div>
+        <div class="cfg-row">
+          <label>Model</label>
+          <select id="cfg-model">
+            <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+            <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
+            <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+          </select>
+        </div>
+        <div class="cfg-row">
+          <label>Temp</label>
+          <input type="range" id="cfg-temp" min="0" max="1.5" step="0.05" value="0.85">
+          <output id="cfg-temp-out">0.85</output>
+        </div>
+        <div class="cfg-row">
+          <label>QA replay</label>
+          <input type="checkbox" id="cfg-det">
+          <span style="flex:1 1 auto">deterministic &middot; temp 0 &middot; cached</span>
+        </div>
+
+        <div class="dev-note">
+          Pre-baked trees ship with zero runtime latency and zero runtime API spend.
+          Live generation is the upsell, not the dependency.
+        </div>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <!-- boot overlay -->
+    <div id="boot">
+      <h1>Ashfall</h1>
+      <p>&ldquo;The mountain closed itself. That is not a tragedy — it is an answer.&rdquo;</p>
+      <div id="boot-status">waking the tavern<span class="thinking-dots"></span></div>
+      <div id="boot-warn"></div>
+    </div>
+
+  </div>
+</div>
+
+<?!= include('Sprites') ?>
+<?!= include('GameEngine') ?>
+<?!= include('DialogueUI') ?>
+<?!= include('DevPanel') ?>
+
+<script>
+/**
+ * App — the orchestrator. Owns world state and every server call; the engine
+ * and the UI stay ignorant of google.script.run so both remain testable.
+ */
+var App = (function () {
+  'use strict';
+
+  var PLAYER_ID = '<?= playerId ?>';
+
+  var state = null;
+  var personas = [];
+  var byId = {};
+  var config = null;
+  var saveTimer = 0;
+  var busy = false;
+
+  /**
+   * Flashes a transient message.
+   * @param {string} msg Text.
+   * @param {number=} ms Duration.
+   */
+  function toast(msg, ms) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function () { t.classList.remove('show'); }, ms || 3200);
+  }
+
+  /**
+   * Promise-free wrapper around google.script.run.
+   * @param {string} fn Server function name.
+   * @param {!Array} args Arguments.
+   * @param {function(*)} ok Success handler.
+   * @param {function(!Error)=} fail Failure handler.
+   */
+  function call(fn, args, ok, fail) {
+    var runner = google.script.run
+      .withSuccessHandler(ok)
+      .withFailureHandler(fail || function (err) {
+        toast('Server error: ' + (err && err.message ? err.message : err));
+      });
+    runner[fn].apply(runner, args);
+  }
+
+  /* ── boot ──────────────────────────────────────────────────────────── */
+
+  /**
+   * Fetches game data and starts everything.
+   */
+  function boot() {
+    call('getGameData', [PLAYER_ID], onGameData, function (err) {
+      document.getElementById('boot-status').textContent = 'Could not reach the server.';
+      document.getElementById('boot-warn').textContent =
+        (err && err.message) ? err.message : String(err);
+    });
+  }
+
+  /**
+   * Wires the engine, UI and panel once server data lands.
+   * @param {!Object} data Response from `getGameData`.
+   */
+  function onGameData(data) {
+    personas = data.personas || [];
+    personas.forEach(function (p) { byId[p.id] = p; });
+    state = data.state;
+    config = data.config;
+
+    Game.init(data, { canvasId: 'game' });
+
+    Game.hooks.onRequestLine = requestLine;
+    Game.hooks.onDialogueOpen = function (npcId) { DialogueUI.open(npcId); };
+    Game.hooks.onDialogueClose = function () { DialogueUI.close(); saveSoon(); };
+
+    DialogueUI.init({
+      personas: personas,
+      onChoice: function (npcId, choice) { requestLine(npcId, choice); },
+      onExit: function (npcId, choice) { leave(npcId, choice); }
+    });
+    DialogueUI.updateHud(state);
+
+    DevPanel.init({
+      personas: personas,
+      config: config,
+      onExport: doExport,
+      onPrebake: doPrebake,
+      onConfig: doConfig,
+      onClearTree: doClearTree
+    });
+
+    var warn = document.getElementById('boot-warn');
+    if (data.warnings && data.warnings.length) {
+      warn.innerHTML = data.warnings.join('<br>');
+    }
+
+    setTimeout(function () {
+      document.getElementById('boot').classList.add('gone');
+    }, data.hasApiKey ? 900 : 2600);
+  }
+
+  /* ── dialogue ──────────────────────────────────────────────────────── */
+
+  /**
+   * Asks the server for the next NPC line.
+   * @param {string} npcId Persona id.
+   * @param {?Object} choice The choice the player clicked, or null on approach.
+   */
+  function requestLine(npcId, choice) {
+    if (busy) return;
+    busy = true;
+
+    state.conversation = state.conversation || { npcId: npcId, path: [], parentNode: '' };
+    if (state.conversation.npcId !== npcId) {
+      state.conversation = { npcId: npcId, path: [], parentNode: '' };
+    }
+    state.conversation.pendingChoice = choice || null;
+
+    Game.setThinking(npcId, true);
+    DialogueUI.setThinking(true);
+
+    call('generateLine', [npcId, choice ? choice.text : null, JSON.stringify(state)],
+      function (res) { onLine(npcId, res); },
+      function (err) { onLineFailure(npcId, err); });
+  }
+
+  /**
+   * Applies a generated turn to the world, the box and the panel.
+   * @param {string} npcId Persona id.
+   * @param {!Object} res Server envelope.
+   */
+  function onLine(npcId, res) {
+    busy = false;
+    if (!res || !res.response) {
+      onLineFailure(npcId, new Error('empty response'));
+      return;
+    }
+
+    state = res.state;
+    Game.setThinking(npcId, false);
+    Game.applyNpcResponse(npcId, res.response);
+    DialogueUI.render(npcId, res.response, res.debug || {});
+    DialogueUI.updateHud(state);
+    DevPanel.update(res.debug || {}, res.response, state);
+
+    if (res.debug && res.debug.fallbackUsed && res.debug.error) {
+      // never surfaced to the player as an error — only to the engineer
+      if (DevPanel.isOpen()) toast('Fallback served: ' + res.debug.error, 4000);
+    }
+    saveSoon();
+  }
+
+  /**
+   * Degrades to a hand-written line when the transport itself fails. The
+   * player never sees a stack trace.
+   * @param {string} npcId Persona id.
+   * @param {!Error} err The failure.
+   */
+  function onLineFailure(npcId, err) {
+    busy = false;
+    Game.setThinking(npcId, false);
+    var p = byId[npcId];
+    var lines = (p && p.fallbackLines) || ['...'];
+    var line = lines[Math.floor(Math.random() * lines.length)];
+
+    DialogueUI.render(npcId, {
+      line: line,
+      emotion: 'wary',
+      intent: 'deflect',
+      action: 'none',
+      choices: [
+        { id: 'c1', text: 'Try again.', tone: 'kind', leadsTo: 'continue', repDelta: 0 },
+        { id: 'c2', text: 'Leave them be.', tone: 'blunt', leadsTo: 'end', repDelta: 0 }
+      ],
+      loreUsed: [], revealed: [], _fallback: true
+    }, { fallbackUsed: true, violations: [], latencyMs: 0 });
+
+    DevPanel.update({
+      npcId: npcId,
+      error: (err && err.message) ? err.message : String(err),
+      fallbackUsed: true,
+      violations: [{ rule: 'transport', severity: 'block', detail: String(err && err.message || err), field: '' }]
+    }, null, state);
+  }
+
+  /**
+   * Ends a conversation on an exit choice, applying its relationship delta.
+   * @param {string} npcId Persona id.
+   * @param {!Object} choice The exit choice.
+   */
+  function leave(npcId, choice) {
+    if (choice && choice.repDelta) {
+      var v = (state.npcRelationships[npcId] || 0) + choice.repDelta;
+      state.npcRelationships[npcId] = Math.max(-10, Math.min(10, v));
+      DialogueUI.updateHud(state);
+    }
+    state.conversation = { npcId: null, path: [], parentNode: '', pendingChoice: null };
+    Game.exitDialogue();
+  }
+
+  /* ── persistence ───────────────────────────────────────────────────── */
+
+  /**
+   * Debounced save so a fast conversation does not hammer the sheet.
+   */
+  function saveSoon() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      call('saveGameState', [PLAYER_ID, JSON.stringify(state)], function () {}, function () {});
+    }, 3500);
+  }
+
+  /* ── dev panel actions ─────────────────────────────────────────────── */
+
+  /**
+   * Exports the recorded dialogue graph and triggers a download.
+   * @param {string} format json|csv|yarn.
+   */
+  function doExport(format) {
+    toast('Building ' + format.toUpperCase() + ' export…');
+    call('exportDialogueTree', [format, ''], function (res) {
+      if (!res.ok) { toast('Export failed: ' + res.error); return; }
+      if (!res.nodeCount) { toast('Nothing to export yet — talk to someone or bake a tree.'); return; }
+      DevPanel.download(res.filename, res.mime, res.content);
+      toast(res.nodeCount + ' nodes, ' + res.edgeCount + ' edges → ' + res.filename, 4200);
+    });
+  }
+
+  /**
+   * Runs the chunked breadth-first pre-bake to completion.
+   * @param {string} npcId Persona to walk.
+   * @param {number} depth Target depth.
+   */
+  function doPrebake(npcId, depth) {
+    var cursor = null;
+    DevPanel.prebakeProgress(2, 'starting breadth-first walk…', true);
+
+    /**
+     * Runs one chunk and schedules the next.
+     */
+    function step() {
+      call('prebakeTree', [npcId, depth, cursor], function (res) {
+        if (!res || !res.ok) {
+          DevPanel.prebakeProgress(0, 'Pre-bake failed: ' + ((res && res.error) || 'unknown'), false);
+          return;
+        }
+        var seen = res.generated || 0;
+        var left = res.queued || 0;
+        var pct = res.done ? 100 : Math.min(96, (seen / Math.max(1, seen + left)) * 100);
+        DevPanel.prebakeProgress(pct, res.message, !res.done);
+
+        if (res.done) {
+          toast(res.message, 5000);
+          if (res.warnings && res.warnings.length) {
+            toast('Warnings: ' + res.warnings.join(' · '), 6000);
+          }
+        } else {
+          cursor = res.cursor;
+          setTimeout(step, 60);
+        }
+      }, function (err) {
+        DevPanel.prebakeProgress(0, 'Pre-bake failed: ' + (err && err.message || err), false);
+      });
+    }
+    step();
+  }
+
+  /**
+   * Pushes a config change to the server.
+   * @param {!Object} patch Partial config.
+   */
+  function doConfig(patch) {
+    call('setConfig', [JSON.stringify(patch)], function (res) {
+      if (!res.ok) { toast('Config failed: ' + res.error); return; }
+      config = res.config;
+      DevPanel.setConfig(config);
+      toast('Config saved · tier ' + config.ratingTier +
+            ' · ' + config.model +
+            ' · temp ' + (config.deterministicMode ? '0 (QA)' : config.temperature));
+    });
+  }
+
+  /**
+   * Clears the recorded dialogue graph.
+   */
+  function doClearTree() {
+    call('clearExportedTree', [], function (res) {
+      toast(res.ok ? ('Cleared ' + res.cleared + ' rows from ExportedTree.') : ('Failed: ' + res.error));
+      DevPanel.prebakeProgress(0, '', false);
+    });
+  }
+
+  /* ── go ────────────────────────────────────────────────────────────── */
+
+  window.addEventListener('load', boot);
+
+  return {
+    boot: boot,
+    toast: toast,
+    requestLine: requestLine,
+    getState: function () { return state; },
+    getConfig: function () { return config; }
+  };
+})();
+</script>
+
+</body>
+</html>
