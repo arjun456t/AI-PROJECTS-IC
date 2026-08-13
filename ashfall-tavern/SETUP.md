@@ -39,6 +39,29 @@ match exactly** — `include()` and `createTemplateFromFile()` resolve by name.
 
 Apps Script appends the extension itself — type `Persona`, not `Persona.gs`.
 
+### 1.2b Or skip the pasting: push with `clasp`
+
+The folder ships an `appsscript.json` manifest and a `.claspignore`, so the
+whole project uploads in one command.
+
+```bash
+# one-time: turn on the Apps Script API for your account
+open https://script.google.com/home/usersettings     # set "Google Apps Script API" to ON
+
+npx @google/clasp@3 login
+cd ashfall-tavern
+npx @google/clasp@3 create-script --title "Ashfall Tavern" --type webapp --rootDir .
+npx @google/clasp@3 push
+npx @google/clasp@3 open-script
+```
+
+`create-script` writes a `.clasp.json` holding your script id — it is personal
+to your project, so keep it out of version control. After the first push,
+`npx @google/clasp@3 push` alone syncs any later edit.
+
+Then carry on from §1.3 (API key) — `clasp` uploads code, not Script
+Properties, and it cannot press **Run** on `initializeSpreadsheet` for you.
+
 ### 1.3 Set the API key
 
 Get a Gemini key from <https://aistudio.google.com/apikey>, then:
