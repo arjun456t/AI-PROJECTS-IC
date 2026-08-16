@@ -1,0 +1,5 @@
+# Only the Apps Script sources and the manifest belong in the project.
+**/**
+!appsscript.json
+!*.gs
+!*.html

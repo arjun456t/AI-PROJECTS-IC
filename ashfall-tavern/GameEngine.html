@@ -1,0 +1,1459 @@
+<script>
+/**
+ * GameEngine.html — world, loop, collision, camera and ambient FX.
+ *
+ * A 1100×700 tavern rendered into a 900×600 viewport with a clamped follow
+ * camera. Three render layers: a static background baked once into an
+ * offscreen canvas, a depth-sorted entity/prop pass, and an additive FX pass.
+ *
+ * Allocation discipline (spec 8.8): every vector, particle, gradient and
+ * draw-list slot is allocated at init and reused. The per-frame path creates
+ * no objects, arrays or strings, and never touches `shadowBlur`.
+ */
+var Game = (function () {
+  'use strict';
+
+  var VIEW_W = 900, VIEW_H = 600;
+  // The world is wider and slightly taller than the viewport: the camera has
+  // real work to do horizontally, while vertical scroll stays small enough
+  // that the back wall and hearth never leave frame.
+  var WORLD_W = 1100, WORLD_H = 640;
+  var FLOOR_Y = 128;                 // where the back wall ends and the floor starts
+  var STEP = 1000 / 60;              // fixed logic step, 16.67ms
+  var TAU = Math.PI * 2;
+  var PLAYER_SPEED = 150;            // px/s
+  // Wide enough to reach a character standing behind the bar counter — the
+  // player cannot close the last 90px of that gap, the counter is solid.
+  var INTERACT_RANGE = 92;
+  var FOOTSTEP_INTERVAL = 260;
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * STATE
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  var canvas = null, ctx = null;
+  var bgCanvas = null, bgCtx = null;
+  var bgDirty = true;
+
+  var entities = [];
+  var npcs = [];
+  var player = null;
+  var props = [];                    // depth-sorted scenery
+  var drawList = [];                 // preallocated: props + entities
+  var solids = [];
+
+  var keys = Object.create(null);
+  var camera = { x: 0, y: 0, targetX: 0, targetY: 0 };
+  var mode = 'explore';              // 'explore' | 'dialogue'
+  var focusNpc = null;
+  var running = false;
+  var rafId = 0;
+  var lastNow = 0;
+  var accumulator = 0;
+  var elapsed = 0;
+  var footstepTimer = 0;
+
+  var fps = 60, fpsAccum = 0, fpsFrames = 0;
+
+  // ── preallocated particles ────────────────────────────────────────────
+  var motes = [];
+  var puffs = [];
+  var PUFF_POOL = 16;
+
+  // ── cached gradients ──────────────────────────────────────────────────
+  var grad = {
+    fireCore: null, fireMid: null, fireOuter: null, fireFloor: null,
+    candle: null, lantern: null, vignette: null
+  };
+
+  // ── scratch, never reallocated ────────────────────────────────────────
+  var move = { x: 0, y: 0 };
+  var flicker = { a: 1, b: 1, c: 1 };
+
+  /**
+   * Client hooks. Index.html wires these to google.script.run; GameEngine
+   * itself never talks to the server, which keeps it testable in isolation.
+   * @const {!Object}
+   */
+  var hooks = {
+    onRequestLine: null,     // function(npcId, choiceTextOrNull)
+    onDialogueOpen: null,    // function(npcId)
+    onDialogueClose: null,   // function(npcId)
+    onFocusChange: null      // function(npcIdOrNull)
+  };
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * DETERMINISTIC NOISE (background detail must be stable across rebuilds)
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  var rngSeed = 0x1a2b3c;
+
+  /**
+   * Resets the background noise generator.
+   * @param {number} s Seed value.
+   */
+  function seed(s) { rngSeed = s >>> 0; }
+
+  /**
+   * Deterministic pseudo-random in [0,1).
+   * @return {number} Random value.
+   */
+  function rnd() {
+    rngSeed = (rngSeed * 1664525 + 1013904223) >>> 0;
+    return rngSeed / 4294967296;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 8.2  WORLD CONSTRUCTION
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Registers a collision rectangle.
+   * @param {number} x Left.
+   * @param {number} y Top.
+   * @param {number} w Width.
+   * @param {number} h Height.
+   */
+  function solid(x, y, w, h) {
+    solids.push({ x: x, y: y, w: w, h: h });
+  }
+
+  /**
+   * Paints the floorboards.
+   * @param {!CanvasRenderingContext2D} g Background context.
+   */
+  function paintFloor(g) {
+    var planks = 14;
+    var h = (WORLD_H - FLOOR_Y) / planks;
+    for (var i = 0; i < planks; i++) {
+      var y = FLOOR_Y + i * h;
+      g.fillStyle = (i % 2 === 0) ? '#2a1f18' : '#241a14';
+      g.fillRect(0, y, WORLD_W, h + 1);
+
+      g.strokeStyle = 'rgba(0,0,0,0.42)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(0, y + 0.5);
+      g.lineTo(WORLD_W, y + 0.5);
+      g.stroke();
+
+      g.strokeStyle = 'rgba(226,196,150,0.045)';
+      g.lineWidth = 1;
+      g.beginPath();
+      for (var k = 0; k < 10; k++) {
+        var gx = rnd() * WORLD_W;
+        var gy = y + h * (0.25 + rnd() * 0.5);
+        g.moveTo(gx, gy);
+        g.quadraticCurveTo(gx + 45, gy + (rnd() - 0.5) * 3, gx + 95, gy);
+      }
+      g.stroke();
+
+      // plank seams
+      g.strokeStyle = 'rgba(0,0,0,0.30)';
+      g.beginPath();
+      for (var s = 0; s < 4; s++) {
+        var sx = ((i % 2) ? 90 : 0) + s * 280 + rnd() * 30;
+        g.moveTo(sx, y);
+        g.lineTo(sx, y + h);
+      }
+      g.stroke();
+    }
+  }
+
+  /**
+   * Paints the back wall, timber beams and hanging décor.
+   * @param {!CanvasRenderingContext2D} g Background context.
+   */
+  function paintWalls(g) {
+    g.fillStyle = '#1b1510';
+    g.fillRect(0, 0, WORLD_W, FLOOR_Y);
+
+    // plaster band
+    g.fillStyle = '#241c15';
+    g.fillRect(0, 22, WORLD_W, FLOOR_Y - 44);
+
+    // vertical timber beams every 90px
+    for (var x = 0; x < WORLD_W; x += 90) {
+      g.fillStyle = '#332619';
+      g.fillRect(x, 0, 14, FLOOR_Y);
+      g.fillStyle = 'rgba(0,0,0,0.35)';
+      g.fillRect(x + 11, 0, 3, FLOOR_Y);
+      g.fillStyle = 'rgba(210,170,110,0.05)';
+      g.fillRect(x + 1, 0, 2, FLOOR_Y);
+    }
+
+    // top and bottom rails
+    g.fillStyle = '#3a2b1c';
+    g.fillRect(0, 0, WORLD_W, 22);
+    g.fillRect(0, FLOOR_Y - 22, WORLD_W, 22);
+    g.fillStyle = 'rgba(0,0,0,0.4)';
+    g.fillRect(0, FLOOR_Y - 4, WORLD_W, 4);
+
+    // skirting shadow where wall meets floor
+    var sk = g.createLinearGradient(0, FLOOR_Y, 0, FLOOR_Y + 30);
+    sk.addColorStop(0, 'rgba(0,0,0,0.55)');
+    sk.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = sk;
+    g.fillRect(0, FLOOR_Y, WORLD_W, 30);
+
+    solid(0, 0, WORLD_W, FLOOR_Y - 10);
+    solid(0, 0, 16, WORLD_H);
+    solid(WORLD_W - 16, 0, 16, WORLD_H);
+    solid(0, WORLD_H - 16, WORLD_W, 16);
+  }
+
+  /**
+   * Paints the stone hearth arch. The fire itself is a live FX, not baked.
+   * @param {!CanvasRenderingContext2D} g Background context.
+   */
+  function paintHearth(g) {
+    var hx = 296, hw = 140, hy = 18, hh = FLOOR_Y - 18;
+
+    // surround
+    g.fillStyle = '#4a4238';
+    g.fillRect(hx - 16, hy - 8, hw + 32, hh + 8);
+
+    // individual stones
+    for (var row = 0; row < 5; row++) {
+      for (var col = 0; col < 7; col++) {
+        var sx = hx - 14 + col * ((hw + 28) / 7);
+        var sy = hy - 6 + row * (hh / 5);
+        var shade = 0.55 + rnd() * 0.35;
+        g.fillStyle = 'rgb(' + Math.round(78 * shade) + ',' + Math.round(70 * shade) + ',' + Math.round(60 * shade) + ')';
+        g.fillRect(sx + 1, sy + 1, (hw + 28) / 7 - 2, hh / 5 - 2);
+      }
+    }
+
+    // firebox opening
+    g.fillStyle = '#0b0806';
+    g.beginPath();
+    g.moveTo(hx + 8, hy + hh);
+    g.lineTo(hx + 8, hy + hh * 0.45);
+    g.quadraticCurveTo(hx + hw / 2, hy - 6, hx + hw - 8, hy + hh * 0.45);
+    g.lineTo(hx + hw - 8, hy + hh);
+    g.closePath();
+    g.fill();
+
+    // charred logs
+    g.fillStyle = '#241a12';
+    g.fillRect(hx + 26, hy + hh - 20, hw - 52, 12);
+    g.fillStyle = '#191008';
+    g.fillRect(hx + 40, hy + hh - 28, hw - 84, 10);
+
+    // mantel
+    g.fillStyle = '#3d2e1e';
+    g.fillRect(hx - 24, hy + hh * 0.36, hw + 48, 9);
+
+    solid(hx - 16, 0, hw + 32, FLOOR_Y - 6);
+  }
+
+  /**
+   * Paints the staircase in the back right, six steps in perspective.
+   * @param {!CanvasRenderingContext2D} g Background context.
+   */
+  function paintStairs(g) {
+    var bx = 900, by = FLOOR_Y + 42, bw = 172;
+    for (var i = 0; i < 6; i++) {
+      var t = i / 6;
+      var w = bw * (1 - t * 0.30);
+      var x = bx + (bw - w) / 2;
+      var y = by - i * 14;
+      g.fillStyle = i % 2 ? '#3a2c1d' : '#443422';
+      g.fillRect(x, y - 14, w, 15);
+      g.fillStyle = 'rgba(0,0,0,0.45)';
+      g.fillRect(x, y - 1, w, 3);
+      g.fillStyle = 'rgba(220,180,120,0.06)';
+      g.fillRect(x, y - 14, w, 2);
+    }
+    // banister
+    g.strokeStyle = '#5a4429';
+    g.lineWidth = 5;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(bx + 6, by + 4);
+    g.lineTo(bx + 30, by - 84);
+    g.stroke();
+
+    // dark landing
+    g.fillStyle = '#100b07';
+    g.fillRect(bx + 24, 24, bw - 48, by - 108);
+
+    solid(bx, FLOOR_Y - 10, bw, 56);
+  }
+
+  /**
+   * Paints the door the player spawns beside, plus the entry rug.
+   * @param {!CanvasRenderingContext2D} g Background context.
+   */
+  function paintDoorAndRug(g) {
+    // door on the bottom wall
+    var dx = 496, dw = 108;
+    g.fillStyle = '#2e2216';
+    g.fillRect(dx, WORLD_H - 18, dw, 18);
+    g.fillStyle = '#43311f';
+    g.fillRect(dx + 4, WORLD_H - 16, dw - 8, 14);
+    g.fillStyle = 'rgba(200,164,92,0.45)';
+    g.beginPath();
+    g.arc(dx + dw - 18, WORLD_H - 9, 3, 0, TAU);
+    g.fill();
+
+    // rug, centre floor
+    var rx = 560, ry = 470, rw = 250, rh = 118;
+    g.fillStyle = '#4a1f22';
+    g.beginPath();
+    g.ellipse(rx, ry, rw / 2, rh / 2, 0, 0, TAU);
+    g.fill();
+    g.strokeStyle = '#7a3a2c';
+    g.lineWidth = 4;
+    g.beginPath();
+    g.ellipse(rx, ry, rw / 2 - 10, rh / 2 - 8, 0, 0, TAU);
+    g.stroke();
+    g.strokeStyle = 'rgba(200,164,92,0.30)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.ellipse(rx, ry, rw / 2 - 24, rh / 2 - 18, 0, 0, TAU);
+    g.stroke();
+    g.fillStyle = 'rgba(0,0,0,0.22)';
+    g.beginPath();
+    g.ellipse(rx, ry + 6, rw / 2 - 34, rh / 2 - 26, 0, 0, TAU);
+    g.fill();
+  }
+
+  /**
+   * Paints wall décor that never needs to sort against entities.
+   * @param {!CanvasRenderingContext2D} g Background context.
+   */
+  function paintDecor(g) {
+    // shelf of bottles behind the bar
+    g.fillStyle = '#3a2c1c';
+    g.fillRect(96, 62, 300, 7);
+    g.fillRect(96, 96, 300, 7);
+    for (var i = 0; i < 22; i++) {
+      var bx = 104 + i * 13.4;
+      var row = i % 2 ? 96 : 62;
+      var hgt = 16 + rnd() * 10;
+      g.fillStyle = ['#3f5a3a', '#5a4030', '#2f4a5a', '#4a3a5a'][(i * 7) % 4];
+      g.fillRect(bx, row - hgt, 7, hgt);
+      g.fillStyle = 'rgba(255,255,255,0.10)';
+      g.fillRect(bx + 1, row - hgt + 2, 2, hgt - 4);
+    }
+
+    // notice board
+    g.fillStyle = '#5a4529';
+    g.fillRect(700, 40, 96, 62);
+    g.fillStyle = '#c9b68e';
+    for (var n = 0; n < 4; n++) {
+      g.save();
+      g.translate(710 + (n % 2) * 42, 50 + Math.floor(n / 2) * 28);
+      g.rotate((rnd() - 0.5) * 0.16);
+      g.fillRect(0, 0, 34, 22);
+      g.restore();
+    }
+  }
+
+  /**
+   * Draws a stool at a point. Used both as a prop renderer and by the
+   * background painter.
+   * @param {!CanvasRenderingContext2D} g Context.
+   * @param {!Object} p Prop `{x, y}`.
+   */
+  function drawStool(g, p) {
+    g.fillStyle = '#241a11';
+    g.beginPath();
+    g.ellipse(p.x, p.y + 2, 13, 4, 0, 0, TAU);
+    g.fill();
+    g.strokeStyle = '#3d2d1c';
+    g.lineWidth = 3;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(p.x - 8, p.y); g.lineTo(p.x - 6, p.y - 17);
+    g.moveTo(p.x + 8, p.y); g.lineTo(p.x + 6, p.y - 17);
+    g.moveTo(p.x, p.y + 1); g.lineTo(p.x, p.y - 17);
+    g.stroke();
+    g.fillStyle = '#513c25';
+    g.beginPath();
+    g.ellipse(p.x, p.y - 18, 12, 5, 0, 0, TAU);
+    g.fill();
+    g.fillStyle = 'rgba(220,180,120,0.14)';
+    g.beginPath();
+    g.ellipse(p.x - 3, p.y - 19.5, 6, 2, 0, 0, TAU);
+    g.fill();
+  }
+
+  /**
+   * Draws the bar counter.
+   * @param {!CanvasRenderingContext2D} g Context.
+   * @param {!Object} p Prop record.
+   */
+  function drawCounter(g, p) {
+    var x = p.x, y = p.y, w = p.w, h = p.h;
+    // front face
+    g.fillStyle = '#2f2416';
+    g.fillRect(x, y, w, h);
+    // panel lines
+    g.strokeStyle = 'rgba(0,0,0,0.4)';
+    g.lineWidth = 2;
+    g.beginPath();
+    for (var i = 1; i < 6; i++) {
+      g.moveTo(x + (w / 6) * i, y + 6);
+      g.lineTo(x + (w / 6) * i, y + h - 4);
+    }
+    g.stroke();
+    // top surface
+    g.fillStyle = '#4b3822';
+    g.fillRect(x - 5, y - 12, w + 10, 14);
+    g.fillStyle = 'rgba(232,200,140,0.20)';
+    g.fillRect(x - 5, y - 12, w + 10, 3);
+    g.fillStyle = 'rgba(0,0,0,0.35)';
+    g.fillRect(x - 5, y + 1, w + 10, 3);
+    // a couple of tankards left on the bar
+    g.fillStyle = '#6a5233';
+    g.fillRect(x + 60, y - 22, 9, 11);
+    g.fillRect(x + 210, y - 21, 8, 10);
+  }
+
+  /**
+   * Draws a round table with its candle stub.
+   * @param {!CanvasRenderingContext2D} g Context.
+   * @param {!Object} p Prop record.
+   */
+  function drawTable(g, p) {
+    g.fillStyle = 'rgba(0,0,0,0.30)';
+    g.beginPath();
+    g.ellipse(p.x, p.y + 4, 40, 12, 0, 0, TAU);
+    g.fill();
+
+    g.strokeStyle = '#33261a';
+    g.lineWidth = 5;
+    g.beginPath();
+    g.moveTo(p.x, p.y); g.lineTo(p.x, p.y - 22);
+    g.stroke();
+
+    g.fillStyle = '#5a4227';
+    g.beginPath();
+    g.ellipse(p.x, p.y - 26, 42, 15, 0, 0, TAU);
+    g.fill();
+    g.fillStyle = 'rgba(226,190,130,0.16)';
+    g.beginPath();
+    g.ellipse(p.x - 8, p.y - 29, 24, 7, 0, 0, TAU);
+    g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.35)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.ellipse(p.x, p.y - 26, 42, 15, 0, 0, TAU);
+    g.stroke();
+
+    // candle stub (the glow is an FX-pass gradient)
+    g.fillStyle = '#3a2c1c';
+    g.fillRect(p.x - 4, p.y - 34, 8, 8);
+    g.fillStyle = '#e4d7b4';
+    g.fillRect(p.x - 2.5, p.y - 44, 5, 11);
+  }
+
+  /**
+   * Draws a barrel.
+   * @param {!CanvasRenderingContext2D} g Context.
+   * @param {!Object} p Prop record.
+   */
+  function drawBarrel(g, p) {
+    g.fillStyle = 'rgba(0,0,0,0.32)';
+    g.beginPath();
+    g.ellipse(p.x, p.y + 2, 19, 6, 0, 0, TAU);
+    g.fill();
+
+    g.fillStyle = '#4a361f';
+    g.beginPath();
+    g.moveTo(p.x - 15, p.y);
+    g.quadraticCurveTo(p.x - 21, p.y - 22, p.x - 15, p.y - 44);
+    g.lineTo(p.x + 15, p.y - 44);
+    g.quadraticCurveTo(p.x + 21, p.y - 22, p.x + 15, p.y);
+    g.closePath();
+    g.fill();
+
+    g.fillStyle = 'rgba(0,0,0,0.30)';
+    g.fillRect(p.x - 19, p.y - 34, 38, 4);
+    g.fillRect(p.x - 19, p.y - 15, 38, 4);
+    g.fillStyle = '#6a5230';
+    g.beginPath();
+    g.ellipse(p.x, p.y - 44, 15, 5, 0, 0, TAU);
+    g.fill();
+    g.fillStyle = 'rgba(226,190,130,0.10)';
+    g.beginPath();
+    g.moveTo(p.x - 11, p.y - 3);
+    g.quadraticCurveTo(p.x - 15, p.y - 22, p.x - 11, p.y - 41);
+    g.lineTo(p.x - 7, p.y - 41);
+    g.quadraticCurveTo(p.x - 11, p.y - 22, p.x - 7, p.y - 3);
+    g.closePath();
+    g.fill();
+  }
+
+  /**
+   * Registers one depth-sorted prop.
+   * @param {string} kind Prop kind.
+   * @param {number} x Anchor x.
+   * @param {number} y Anchor y (its ground line).
+   * @param {function(!CanvasRenderingContext2D, !Object)} render Draw function.
+   * @param {!Object=} extra Extra fields (w, h, sortBias).
+   * @return {!Object} The prop record.
+   */
+  function addProp(kind, x, y, render, extra) {
+    var p = { type: 'prop', kind: kind, x: x, y: y, w: 0, h: 0, sortY: y, render: render };
+    if (extra) for (var k in extra) p[k] = extra[k];
+    if (p.sortBias) p.sortY = y + p.sortBias;
+    props.push(p);
+    return p;
+  }
+
+  /**
+   * Builds the whole tavern: bakes static geometry into the background
+   * canvas, registers depth-sorted props and their collision rectangles.
+   */
+  function buildWorld() {
+    seed(0x1a2b3c);
+    solids.length = 0;
+    props.length = 0;
+
+    bgCtx.clearRect(0, 0, WORLD_W, WORLD_H);
+    paintWalls(bgCtx);
+    paintFloor(bgCtx);
+    paintHearth(bgCtx);
+    paintStairs(bgCtx);
+    paintDoorAndRug(bgCtx);
+    paintDecor(bgCtx);
+
+    // ── bar counter (sorted: the player passes behind it) ───────────────
+    var counter = addProp('counter', 90, 400, drawCounter, { w: 340, h: 52, sortY: 452 });
+    solid(counter.x - 5, counter.y - 12, counter.w + 10, counter.h + 12);
+
+    // ── bar stools in front of the counter ──────────────────────────────
+    var barStools = [140, 236, 332];
+    for (var i = 0; i < barStools.length; i++) {
+      var bs = addProp('stool', barStools[i], 496, drawStool);
+      solid(bs.x - 11, bs.y - 8, 22, 12);
+    }
+
+    // ── tables + their stools ───────────────────────────────────────────
+    var tableSpots = [[600, 258], [812, 348], [258, 548], [648, 556]];
+    for (var t = 0; t < tableSpots.length; t++) {
+      var tx = tableSpots[t][0], ty = tableSpots[t][1];
+      var tb = addProp('table', tx, ty, drawTable, { w: 84, h: 30 });
+      solid(tx - 42, ty - 18, 84, 22);
+      var s1 = addProp('stool', tx - 62, ty - 6, drawStool);
+      var s2 = addProp('stool', tx + 62, ty + 6, drawStool);
+      solid(s1.x - 11, s1.y - 8, 22, 12);
+      solid(s2.x - 11, s2.y - 8, 22, 12);
+    }
+
+    // ── barrels ─────────────────────────────────────────────────────────
+    var barrelSpots = [[62, 250], [104, 268], [82, 214], [154, 240], [196, 258]];
+    for (var b = 0; b < barrelSpots.length; b++) {
+      var br = addProp('barrel', barrelSpots[b][0], barrelSpots[b][1], drawBarrel);
+      solid(br.x - 16, br.y - 16, 32, 18);
+    }
+
+    rebuildDrawList();
+    bgDirty = false;
+  }
+
+  /**
+   * Refreshes the depth-sort list after a world rebuild. Membership is fixed
+   * for the life of a world, so the array is filled once and only re-sorted
+   * per frame.
+   */
+  function rebuildDrawList() {
+    drawList.length = 0;
+    for (var p = 0; p < props.length; p++) drawList.push(props[p]);
+    for (var e = 0; e < entities.length; e++) drawList.push(entities[e]);
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 8.3  ENTITIES
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Creates an entity.
+   * @param {!Object} spec `{id, type, x, y, spriteCfg, idleAction, npcId, name}`.
+   * @return {!Object} Entity.
+   */
+  function makeEntity(spec) {
+    var e = {
+      id: spec.id,
+      type: spec.type,
+      name: spec.name || spec.id,
+      npcId: spec.npcId || null,
+      x: spec.x, y: spec.y,
+      homeX: spec.x, homeY: spec.y,
+      facing: spec.facing || 1,
+      speed: spec.speed || 0,
+      hitbox: { w: 22, h: 14 },
+      spriteCfg: spec.spriteCfg,
+      idleAction: spec.idleAction || 'idle',
+      emotion: 'neutral',
+      thinking: false,
+      thinkTime: 0,
+      moving: false,
+      animator: Sprites.createAnimator(spec.spriteCfg),
+      sortY: spec.y
+    };
+    e.animator.setBase(Sprites.idleClipFor(e.idleAction), true);
+    return e;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 8.4  MOVEMENT + COLLISION
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * AABB overlap test against an entity's foot box.
+   * @param {!Object} e Entity.
+   * @param {!Object} s Solid rect.
+   * @return {boolean} True on overlap.
+   */
+  function overlaps(e, s) {
+    var l = e.x - e.hitbox.w / 2, r = l + e.hitbox.w;
+    var t = e.y - e.hitbox.h, b = e.y;
+    return l < s.x + s.w && r > s.x && t < s.y + s.h && b > s.y;
+  }
+
+  /**
+   * Moves an entity along one axis and resolves penetration against every
+   * solid. Per-axis resolution is what lets the player slide along a wall
+   * instead of sticking to it.
+   * @param {!Object} e Entity (mutated).
+   * @param {number} dx X displacement.
+   * @param {number} dy Y displacement.
+   */
+  function moveAxis(e, dx, dy) {
+    if (!dx && !dy) return;
+    e.x += dx;
+    e.y += dy;
+    for (var i = 0; i < solids.length; i++) {
+      var s = solids[i];
+      if (!overlaps(e, s)) continue;
+      if (dx > 0) e.x = s.x - e.hitbox.w / 2;
+      else if (dx < 0) e.x = s.x + s.w + e.hitbox.w / 2;
+      else if (dy > 0) e.y = s.y;
+      else if (dy < 0) e.y = s.y + s.h + e.hitbox.h;
+    }
+  }
+
+  /**
+   * Reads the input state into the shared `move` vector, normalised.
+   */
+  function readInput() {
+    move.x = 0; move.y = 0;
+    if (keys['a'] || keys['arrowleft']) move.x -= 1;
+    if (keys['d'] || keys['arrowright']) move.x += 1;
+    if (keys['w'] || keys['arrowup']) move.y -= 1;
+    if (keys['s'] || keys['arrowdown']) move.y += 1;
+    if (move.x && move.y) {
+      var inv = 0.7071067811865476;
+      move.x *= inv;
+      move.y *= inv;
+    }
+  }
+
+  /**
+   * Spawns a footstep puff from the pool (oldest slot wins).
+   * @param {number} x World x.
+   * @param {number} y World y.
+   */
+  function spawnPuff(x, y) {
+    var oldest = 0, min = Infinity;
+    for (var i = 0; i < puffs.length; i++) {
+      if (puffs[i].life <= 0) { oldest = i; break; }
+      if (puffs[i].life < min) { min = puffs[i].life; oldest = i; }
+    }
+    puffs[oldest].x = x;
+    puffs[oldest].y = y;
+    puffs[oldest].life = 400;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 8.6  INTERACTION
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Recomputes the interaction focus: nearest NPC within range.
+   */
+  function updateFocus() {
+    if (mode === 'dialogue') return;
+    var best = null, bestD = INTERACT_RANGE * INTERACT_RANGE;
+    for (var i = 0; i < npcs.length; i++) {
+      var n = npcs[i];
+      var dx = n.x - player.x, dy = n.y - player.y;
+      var d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = n; }
+    }
+    if (best !== focusNpc) {
+      focusNpc = best;
+      if (hooks.onFocusChange) hooks.onFocusChange(best ? best.npcId : null);
+    }
+  }
+
+  /**
+   * Enters dialogue with an NPC: freezes movement, turns both parties to face
+   * each other, and asks the host page for the first line.
+   * @param {string} npcId Persona id.
+   * @return {boolean} True when dialogue was entered.
+   */
+  function enterDialogue(npcId) {
+    var npc = findNpc(npcId);
+    if (!npc || mode === 'dialogue') return false;
+
+    mode = 'dialogue';
+    focusNpc = npc;
+    player.moving = false;
+
+    // face each other
+    npc.facing = (player.x < npc.x) ? -1 : 1;
+    player.facing = (npc.x < player.x) ? -1 : 1;
+
+    Sprites.playAction(player, 'interact');
+    Sprites.playAction(npc, 'lean_in');
+    setThinking(npcId, true);
+
+    if (hooks.onDialogueOpen) hooks.onDialogueOpen(npcId);
+    if (hooks.onRequestLine) hooks.onRequestLine(npcId, null);
+    return true;
+  }
+
+  /**
+   * Leaves dialogue and returns control to the player.
+   * @return {boolean} True when dialogue was active.
+   */
+  function exitDialogue() {
+    if (mode !== 'dialogue') return false;
+    var npcId = focusNpc ? focusNpc.npcId : null;
+    if (focusNpc) {
+      setThinking(npcId, false);
+      focusNpc.animator.setBase(Sprites.idleClipFor(focusNpc.idleAction), true);
+      focusNpc.emotion = 'neutral';
+    }
+    mode = 'explore';
+    if (hooks.onDialogueClose) hooks.onDialogueClose(npcId);
+    return true;
+  }
+
+  /**
+   * Applies a generated response to an NPC's body language.
+   * @param {string} npcId Persona id.
+   * @param {!Object} response `{emotion, action}`.
+   * @return {boolean} True when applied.
+   */
+  function applyNpcResponse(npcId, response) {
+    var npc = findNpc(npcId);
+    if (!npc || !response) return false;
+    setThinking(npcId, false);
+    if (response.emotion) Sprites.setEmotion(npc, response.emotion);
+    if (response.action && response.action !== 'none') {
+      // let the emotion beat land first, then the gesture
+      Sprites.playAction(npc, response.action);
+      npc.animator.emotionTimer = Math.max(npc.animator.emotionTimer, 900);
+    }
+    return true;
+  }
+
+  /**
+   * Toggles the in-flight indicator above an NPC.
+   * @param {string} npcId Persona id.
+   * @param {boolean} on Whether a request is pending.
+   * @return {boolean} True when applied.
+   */
+  function setThinking(npcId, on) {
+    var npc = findNpc(npcId);
+    if (!npc) return false;
+    npc.thinking = !!on;
+    if (on) npc.thinkTime = 0;
+    return true;
+  }
+
+  /**
+   * Finds an NPC entity by persona id.
+   * @param {string} npcId Persona id.
+   * @return {?Object} Entity or null.
+   */
+  function findNpc(npcId) {
+    for (var i = 0; i < npcs.length; i++) if (npcs[i].npcId === npcId) return npcs[i];
+    return null;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * LOGIC STEP
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * One fixed logic tick.
+   * @param {number} dt Milliseconds (always STEP).
+   */
+  function fixedUpdate(dt) {
+    var sec = dt / 1000;
+
+    if (mode === 'explore') {
+      readInput();
+      if (move.x || move.y) {
+        moveAxis(player, move.x * PLAYER_SPEED * sec, 0);
+        moveAxis(player, 0, move.y * PLAYER_SPEED * sec);
+        if (move.x) player.facing = move.x > 0 ? 1 : -1;
+        player.x = Sprites.clamp(player.x, 24, WORLD_W - 24);
+        player.y = Sprites.clamp(player.y, FLOOR_Y + 8, WORLD_H - 20);
+
+        if (!player.moving) {
+          player.moving = true;
+          player.animator.setBase('walk', true);
+        }
+        footstepTimer -= dt;
+        if (footstepTimer <= 0) {
+          footstepTimer = FOOTSTEP_INTERVAL;
+          spawnPuff(player.x, player.y);
+        }
+      } else if (player.moving) {
+        player.moving = false;
+        player.animator.setBase('idle', true);
+        footstepTimer = 0;
+      }
+    } else if (player.moving) {
+      player.moving = false;
+      player.animator.setBase('idle', true);
+    }
+
+    updateFocus();
+
+    // camera follows the player, clamped to the world
+    camera.targetX = Sprites.clamp(player.x - VIEW_W / 2, 0, WORLD_W - VIEW_W);
+    camera.targetY = Sprites.clamp(player.y - VIEW_H / 2 - 40, 0, WORLD_H - VIEW_H);
+    camera.x += (camera.targetX - camera.x) * Math.min(1, sec * 6);
+    camera.y += (camera.targetY - camera.y) * Math.min(1, sec * 6);
+
+    // animators
+    for (var i = 0; i < entities.length; i++) {
+      var e = entities[i];
+      e.animator.update(dt);
+      e.sortY = e.y;
+      if (e.thinking) e.thinkTime += dt;
+    }
+
+    // particles
+    for (var m = 0; m < motes.length; m++) {
+      var mo = motes[m];
+      mo.x += mo.vx * sec;
+      mo.y += mo.vy * sec;
+      mo.phase += sec * mo.speed;
+      if (mo.y < FLOOR_Y - 40) { mo.y = WORLD_H - 20; mo.x = rndRuntime() * WORLD_W; }
+      if (mo.x > WORLD_W) mo.x = 0;
+      if (mo.x < 0) mo.x = WORLD_W;
+    }
+    for (var p = 0; p < puffs.length; p++) {
+      if (puffs[p].life > 0) puffs[p].life -= dt;
+    }
+  }
+
+  /**
+   * Runtime randomness (kept separate from the deterministic background RNG).
+   * @return {number} Random 0..1.
+   */
+  function rndRuntime() { return Math.random(); }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 8.5 + 8.7  RENDER
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Sort comparator: everything is ordered by its ground line.
+   * @param {!Object} a Left.
+   * @param {!Object} b Right.
+   * @return {number} Sort order.
+   */
+  function bySortY(a, b) {
+    return (a.sortY || a.y) - (b.sortY || b.y);
+  }
+
+  /**
+   * Draws the bobbing interaction prompt over the focused NPC.
+   * @param {!Object} npc Focused NPC.
+   */
+  function drawPrompt(npc) {
+    var bob = Math.sin(elapsed / 300) * 3;
+    var y = npc.y - 128 * (npc.spriteCfg.height || 1) + bob;
+
+    ctx.font = 'bold 15px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(npc.x - 15, y - 12, 30, 24, 5);
+    else ctx.rect(npc.x - 15, y - 12, 30, 24);
+    ctx.fill();
+
+    // baked-in drop shadow (no shadowBlur in the frame path)
+    ctx.fillStyle = 'rgba(0,0,0,0.85)';
+    ctx.fillText('E', npc.x + 1, y + 1);
+    ctx.fillStyle = '#c8a45c';
+    ctx.fillText('E', npc.x, y);
+
+    // name sits above the badge so it never lands on the character's face
+    ctx.font = '11px Georgia, serif';
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillText(npc.name, npc.x + 1, y - 21);
+    ctx.fillStyle = 'rgba(232,220,196,0.82)';
+    ctx.fillText(npc.name, npc.x, y - 22);
+  }
+
+  /**
+   * Entity + prop pass, depth sorted.
+   */
+  function drawEntities() {
+    // Entities refresh their own sortY in fixedUpdate; props are static.
+    drawList.sort(bySortY);
+
+    for (var d = 0; d < drawList.length; d++) {
+      var item = drawList[d];
+      if (item.type === 'prop') {
+        item.render(ctx, item);
+        continue;
+      }
+      var a = item.animator;
+      Sprites.drawCharacter(ctx, item.x, item.y, a.current, item.spriteCfg, {
+        facing: item.facing,
+        blinking: a.blinking,
+        mouth: a.mods.mouth,
+        warmShift: a.mods.warmShift,
+        shakeHz: a.mods.shakeHz,
+        propAngle: a.propAngle,
+        time: elapsed
+      });
+    }
+  }
+
+  /**
+   * Ambient FX pass — hearth, candles, dust, lanterns, puffs, prompts.
+   */
+  function drawFX() {
+    // ── hearth fire: three stacked gradients with independent noise ──────
+    flicker.a = 0.75 + Math.random() * 0.25;
+    flicker.b = 0.75 + Math.random() * 0.25;
+    flicker.c = 0.75 + Math.random() * 0.25;
+    var wob = 1 + Math.sin(elapsed / 140) * 0.06;
+    var fx = 366, fy = 108;
+
+    ctx.globalCompositeOperation = 'lighter';
+
+    ctx.save();
+    ctx.translate(fx, fy);
+    ctx.scale(wob, 1 / wob);
+    ctx.globalAlpha = 0.55 * flicker.c;
+    ctx.fillStyle = grad.fireOuter;
+    ctx.fillRect(-90, -90, 180, 180);
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(fx, fy - 4);
+    ctx.scale(1 / wob, wob);
+    ctx.globalAlpha = 0.75 * flicker.b;
+    ctx.fillStyle = grad.fireMid;
+    ctx.fillRect(-56, -56, 112, 112);
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(fx, fy - 8);
+    ctx.scale(wob, 1 / wob);
+    ctx.globalAlpha = 0.95 * flicker.a;
+    ctx.fillStyle = grad.fireCore;
+    ctx.fillRect(-30, -30, 60, 60);
+    ctx.restore();
+
+    // warm floor glow, radius pulsing on a 900ms sine
+    var pulse = 1 + Math.sin(elapsed / 900 * TAU) * 0.08;
+    ctx.save();
+    ctx.translate(fx, FLOOR_Y + 28);
+    ctx.scale(2.1 * pulse, 0.62 * pulse);
+    ctx.globalAlpha = 0.30 * flicker.a;
+    ctx.fillStyle = grad.fireFloor;
+    ctx.fillRect(-110, -110, 220, 220);
+    ctx.restore();
+
+    // ── candles, one soft gradient per table ────────────────────────────
+    for (var i = 0; i < props.length; i++) {
+      var p = props[i];
+      if (p.kind !== 'table') continue;
+      var f = 0.82 + Math.sin(elapsed / (170 + i * 43)) * 0.10 + Math.random() * 0.08;
+      ctx.save();
+      ctx.translate(p.x, p.y - 44);
+      ctx.globalAlpha = 0.42 * f;
+      ctx.fillStyle = grad.candle;
+      ctx.fillRect(-46, -46, 92, 92);
+      ctx.restore();
+
+      // flame
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = '#ffd68a';
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y - 47, 1.8 * f, 3.6 * f, 0, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // ── hanging lanterns + their light cones ────────────────────────────
+    var lanterns = LANTERNS;
+    for (var l = 0; l < lanterns.length; l++) {
+      var lx = lanterns[l][0], ly = lanterns[l][1];
+      var lf = 0.85 + Math.sin(elapsed / (260 + l * 91)) * 0.12;
+      ctx.save();
+      ctx.translate(lx, ly + 26);
+      ctx.scale(1.5, 2.4);
+      ctx.globalAlpha = 0.22 * lf;
+      ctx.fillStyle = grad.lantern;
+      ctx.fillRect(-80, -80, 160, 160);
+      ctx.restore();
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+
+    // lantern bodies hang above everything
+    for (var b = 0; b < lanterns.length; b++) {
+      drawLantern(lanterns[b][0], lanterns[b][1]);
+    }
+
+    // ── dust motes ──────────────────────────────────────────────────────
+    for (var m = 0; m < motes.length; m++) Sprites.drawDustMote(ctx, motes[m]);
+
+    // ── footstep puffs ──────────────────────────────────────────────────
+    for (var pf = 0; pf < puffs.length; pf++) {
+      if (puffs[pf].life > 0) Sprites.drawFootstepPuff(ctx, puffs[pf]);
+    }
+
+    // ── thinking bubbles ────────────────────────────────────────────────
+    for (var n = 0; n < npcs.length; n++) {
+      var npc = npcs[n];
+      if (!npc.thinking) continue;
+      Sprites.drawThinkingBubble(ctx, npc.x, npc.y - 128 * (npc.spriteCfg.height || 1), npc.thinkTime);
+    }
+
+    // ── interaction prompt ──────────────────────────────────────────────
+    if (mode === 'explore' && focusNpc) drawPrompt(focusNpc);
+  }
+
+  /** @const {!Array<!Array<number>>} Hanging lantern anchors. */
+  var LANTERNS = [[470, 74], [660, 70], [1010, 78]];
+
+  /**
+   * Draws one hanging lantern body and chain.
+   * @param {number} x World x.
+   * @param {number} y World y of the lantern body.
+   */
+  function drawLantern(x, y) {
+    ctx.strokeStyle = '#57493a';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, y - 14);
+    ctx.stroke();
+
+    // hanging ring
+    ctx.beginPath();
+    ctx.arc(x, y - 15, 3.4, 0, TAU);
+    ctx.stroke();
+
+    // iron cage
+    ctx.fillStyle = '#6a5942';
+    ctx.beginPath();
+    ctx.moveTo(x - 13, y - 11);
+    ctx.lineTo(x + 13, y - 11);
+    ctx.lineTo(x + 10, y + 15);
+    ctx.lineTo(x - 10, y + 15);
+    ctx.closePath();
+    ctx.fill();
+
+    // glazing
+    ctx.fillStyle = 'rgba(255,206,128,0.92)';
+    ctx.fillRect(x - 8, y - 7, 16, 19);
+    ctx.fillStyle = 'rgba(255,244,206,0.95)';
+    ctx.fillRect(x - 3, y - 2, 6, 9);
+
+    // cage bars, cap and base
+    ctx.strokeStyle = '#3d3325';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(x - 3, y - 7); ctx.lineTo(x - 3, y + 12);
+    ctx.moveTo(x + 3, y - 7); ctx.lineTo(x + 3, y + 12);
+    ctx.stroke();
+
+    ctx.fillStyle = '#7a674c';
+    ctx.fillRect(x - 15, y - 15, 30, 5);
+    ctx.fillRect(x - 12, y + 12, 24, 5);
+  }
+
+  /**
+   * Screen-space grade: vignette then a warm overlay wash.
+   */
+  function drawGrade() {
+    ctx.fillStyle = grad.vignette;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.fillStyle = 'rgba(255,170,90,0.06)';
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /**
+   * Renders one frame.
+   */
+  function render() {
+    if (bgDirty) buildWorld();
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, VIEW_W, VIEW_H);
+
+    ctx.save();
+    ctx.translate(-Math.round(camera.x), -Math.round(camera.y));
+    ctx.drawImage(bgCanvas, 0, 0);
+    drawEntities();
+    drawFX();
+    ctx.restore();
+
+    drawGrade();
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 8.1  LOOP
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * The main loop. Delta time is clamped so a backgrounded tab cannot spiral
+   * the accumulator; logic runs at a fixed 60Hz, rendering runs every frame.
+   * @param {number} now High-resolution timestamp from rAF.
+   */
+  function loop(now) {
+    if (!running) return;
+    rafId = requestAnimationFrame(loop);
+
+    var dt = Math.min(now - lastNow, 50);
+    lastNow = now;
+    elapsed += dt;
+
+    accumulator += dt;
+    var guard = 0;
+    while (accumulator >= STEP && guard < 5) {
+      fixedUpdate(STEP);
+      accumulator -= STEP;
+      guard++;
+    }
+    if (guard >= 5) accumulator = 0;
+
+    render();
+
+    fpsAccum += dt;
+    fpsFrames++;
+    if (fpsAccum >= 500) {
+      fps = Math.round(fpsFrames * 1000 / fpsAccum);
+      fpsAccum = 0;
+      fpsFrames = 0;
+    }
+  }
+
+  /**
+   * Starts the loop.
+   */
+  function start() {
+    if (running) return;
+    running = true;
+    lastNow = performance.now();
+    accumulator = 0;
+    rafId = requestAnimationFrame(loop);
+  }
+
+  /**
+   * Stops the loop and releases the frame request.
+   */
+  function stop() {
+    running = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * INIT
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Builds every gradient once. Gradient coordinates are in user space, so
+   * each is authored at the origin and positioned with a translate at fill
+   * time — one allocation at init, zero per frame.
+   */
+  function buildGradients() {
+    var g;
+
+    g = ctx.createRadialGradient(0, 0, 2, 0, 0, 30);
+    g.addColorStop(0, 'rgba(255,244,196,0.95)');
+    g.addColorStop(0.45, 'rgba(255,176,72,0.55)');
+    g.addColorStop(1, 'rgba(255,120,30,0)');
+    grad.fireCore = g;
+
+    g = ctx.createRadialGradient(0, 0, 4, 0, 0, 56);
+    g.addColorStop(0, 'rgba(255,182,86,0.65)');
+    g.addColorStop(0.5, 'rgba(233,116,38,0.34)');
+    g.addColorStop(1, 'rgba(180,60,20,0)');
+    grad.fireMid = g;
+
+    g = ctx.createRadialGradient(0, 0, 8, 0, 0, 90);
+    g.addColorStop(0, 'rgba(240,138,54,0.34)');
+    g.addColorStop(1, 'rgba(150,50,16,0)');
+    grad.fireOuter = g;
+
+    g = ctx.createRadialGradient(0, 0, 6, 0, 0, 110);
+    g.addColorStop(0, 'rgba(255,170,80,0.55)');
+    g.addColorStop(1, 'rgba(255,120,40,0)');
+    grad.fireFloor = g;
+
+    g = ctx.createRadialGradient(0, 0, 1, 0, 0, 46);
+    g.addColorStop(0, 'rgba(255,224,150,0.85)');
+    g.addColorStop(0.4, 'rgba(255,170,70,0.28)');
+    g.addColorStop(1, 'rgba(255,140,40,0)');
+    grad.candle = g;
+
+    g = ctx.createRadialGradient(0, 0, 4, 0, 0, 80);
+    g.addColorStop(0, 'rgba(255,206,132,0.55)');
+    g.addColorStop(1, 'rgba(255,170,90,0)');
+    grad.lantern = g;
+
+    g = ctx.createRadialGradient(VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.28,
+                                 VIEW_W / 2, VIEW_H / 2, VIEW_H * 0.82);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(0.65, 'rgba(0,0,0,0.22)');
+    g.addColorStop(1, 'rgba(0,0,0,0.55)');
+    grad.vignette = g;
+  }
+
+  /**
+   * Boots the engine.
+   * @param {!Object} gameData `{personas: [...]}` from the server.
+   * @param {!Object=} opts `{canvasId}`.
+   * @return {!Object} The Game namespace.
+   */
+  function init(gameData, opts) {
+    opts = opts || {};
+    canvas = document.getElementById(opts.canvasId || 'game');
+    canvas.width = VIEW_W;
+    canvas.height = VIEW_H;
+    ctx = canvas.getContext('2d', { alpha: false });
+    ctx.imageSmoothingEnabled = false;
+
+    bgCanvas = document.createElement('canvas');
+    bgCanvas.width = WORLD_W;
+    bgCanvas.height = WORLD_H;
+    bgCtx = bgCanvas.getContext('2d');
+    bgCtx.imageSmoothingEnabled = false;
+
+    buildGradients();
+    buildWorld();
+
+    // ── entities ────────────────────────────────────────────────────────
+    entities.length = 0;
+    npcs.length = 0;
+
+    player = makeEntity({
+      id: 'player', type: 'player', name: 'You',
+      x: 552, y: 596, facing: 1, speed: PLAYER_SPEED,
+      idleAction: 'idle',
+      spriteCfg: {
+        palette: { skin: '#cf9a70', cloth: '#33404a', accent: '#5c6b76', hair: '#2b2119', trim: '#8c6a3c' },
+        height: 1.0, build: 'slight', prop: 'none'
+      }
+    });
+    entities.push(player);
+
+    var anchors = {
+      // Bram stands inside the counter footprint so the counter — which sorts
+      // in front of him — hides him from the waist down, the way a barkeep reads.
+      bram:  { x: 250, y: 428, facing: 1 },
+      veyla: { x: 468, y: 252, facing: -1 },
+      pike:  { x: 890, y: 420, facing: -1 }
+    };
+
+    var personas = (gameData && gameData.personas) || [];
+    for (var i = 0; i < personas.length; i++) {
+      var p = personas[i];
+      var a = anchors[p.id] || { x: 600 + i * 90, y: 400, facing: 1 };
+      var npc = makeEntity({
+        id: 'npc-' + p.id, type: 'npc', npcId: p.id, name: p.name,
+        x: a.x, y: a.y, facing: a.facing,
+        spriteCfg: p.sprite, idleAction: p.idleAction
+      });
+      entities.push(npc);
+      npcs.push(npc);
+    }
+
+    // ── depth-sorted draw list, fixed membership ────────────────────────
+    rebuildDrawList();
+
+    // ── particles ───────────────────────────────────────────────────────
+    motes.length = 0;
+    for (var m = 0; m < 6; m++) {
+      motes.push({
+        x: Math.random() * WORLD_W,
+        y: FLOOR_Y + Math.random() * (WORLD_H - FLOOR_Y),
+        vx: 4 + Math.random() * 8,
+        vy: -(5 + Math.random() * 9),
+        alpha: 0.25 + Math.random() * 0.35,
+        phase: Math.random() * TAU,
+        speed: 0.7 + Math.random() * 0.9,
+        size: 1.1 + Math.random() * 1.1
+      });
+    }
+    puffs.length = 0;
+    for (var pu = 0; pu < PUFF_POOL; pu++) puffs.push({ x: 0, y: 0, life: 0 });
+
+    camera.x = camera.targetX = Sprites.clamp(player.x - VIEW_W / 2, 0, WORLD_W - VIEW_W);
+    camera.y = camera.targetY = Sprites.clamp(player.y - VIEW_H / 2 - 40, 0, WORLD_H - VIEW_H);
+
+    bindInput();
+    start();
+    return Game;
+  }
+
+  /**
+   * Attaches keyboard handlers. Typing in a panel field never moves the
+   * player.
+   */
+  function bindInput() {
+    /**
+     * True when a text field currently owns the keyboard.
+     * @return {boolean} Whether input should be ignored.
+     */
+    function typing() {
+      var el = document.activeElement;
+      if (!el) return false;
+      var tag = el.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
+    }
+
+    window.addEventListener('keydown', function (ev) {
+      if (typing()) return;
+      var k = ev.key.toLowerCase();
+      keys[k] = true;
+
+      if (k === 'e' && mode === 'explore' && focusNpc) {
+        ev.preventDefault();
+        enterDialogue(focusNpc.npcId);
+      } else if (k === 'escape' && mode === 'dialogue') {
+        ev.preventDefault();
+        exitDialogue();
+      }
+      if (k === ' ' || k.indexOf('arrow') === 0) ev.preventDefault();
+    });
+
+    window.addEventListener('keyup', function (ev) {
+      keys[ev.key.toLowerCase()] = false;
+    });
+
+    window.addEventListener('blur', function () {
+      for (var k in keys) keys[k] = false;
+    });
+
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) stop();
+      else start();
+    });
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+   * 8.9  PUBLIC API
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * Marks the static background for a rebuild on the next frame.
+   */
+  function invalidateBackground() { bgDirty = true; }
+
+  /**
+   * Snapshot of runtime state, for the DevPanel.
+   * @return {!Object} `{mode, fps, playerX, playerY, focusNpc, entities, solids, props, elapsed}`.
+   */
+  function getState() {
+    return {
+      mode: mode,
+      fps: fps,
+      playerX: Math.round(player ? player.x : 0),
+      playerY: Math.round(player ? player.y : 0),
+      camX: Math.round(camera.x),
+      camY: Math.round(camera.y),
+      focusNpc: focusNpc ? focusNpc.npcId : null,
+      entities: entities.length,
+      solids: solids.length,
+      props: props.length,
+      drawCalls: drawList.length,
+      elapsed: Math.round(elapsed)
+    };
+  }
+
+  /** @const {!Array<!Array<number>>} Approach offsets, nearest-first. */
+  var APPROACH = [[0, 52], [46, 34], [-46, 34], [58, 4], [-58, 4], [0, -44], [46, -28], [-46, -28]];
+
+  /**
+   * Whether an entity-sized foot box at (x, y) is clear of every solid.
+   * @param {number} x Candidate x.
+   * @param {number} y Candidate y.
+   * @return {boolean} True when the spot is standable.
+   */
+  function standable(x, y) {
+    var l = x - 11, r = x + 11, t = y - 14, b = y;
+    if (l < 18 || r > WORLD_W - 18 || t < FLOOR_Y - 6 || b > WORLD_H - 18) return false;
+    for (var i = 0; i < solids.length; i++) {
+      var s = solids[i];
+      if (l < s.x + s.w && r > s.x && t < s.y + s.h && b > s.y) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Places the player at the nearest standable spot within talking distance of
+   * an NPC. Used by the DevPanel's shortcuts and by automated walkthroughs.
+   * @param {string} npcId Persona id.
+   * @return {boolean} True when a spot was found.
+   */
+  function focusOn(npcId) {
+    var npc = findNpc(npcId);
+    if (!npc) return false;
+    for (var i = 0; i < APPROACH.length; i++) {
+      var x = npc.x + APPROACH[i][0];
+      var y = npc.y + APPROACH[i][1];
+      if (!standable(x, y)) continue;
+      var dx = npc.x - x, dy = npc.y - y;
+      if (dx * dx + dy * dy > INTERACT_RANGE * INTERACT_RANGE) continue;
+      player.x = x;
+      player.y = y;
+      player.facing = npc.x > x ? 1 : -1;
+      updateFocus();
+      return true;
+    }
+    return false;
+  }
+
+  return {
+    init: init,
+    loop: loop,
+    start: start,
+    stop: stop,
+    enterDialogue: enterDialogue,
+    exitDialogue: exitDialogue,
+    applyNpcResponse: applyNpcResponse,
+    setThinking: setThinking,
+    invalidateBackground: invalidateBackground,
+    getState: getState,
+    focusOn: focusOn,
+    hooks: hooks,
+    get mode() { return mode; },
+    get solids() { return solids; },
+    get entities() { return entities; },
+    get npcs() { return npcs; },
+    get focusNpc() { return focusNpc; },
+    VIEW_W: VIEW_W,
+    VIEW_H: VIEW_H,
+    WORLD_W: WORLD_W,
+    WORLD_H: WORLD_H
+  };
+})();
+</script>
