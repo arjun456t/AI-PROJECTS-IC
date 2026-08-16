@@ -44,6 +44,11 @@ Apps Script appends the extension itself — type `Persona`, not `Persona.gs`.
 The folder ships an `appsscript.json` manifest and a `.claspignore`, so the
 whole project uploads in one command.
 
+The manifest sets the V8 runtime and the web-app access mode, and deliberately
+does **not** pin `oauthScopes`: Apps Script derives scopes from the code it
+actually runs, and a hand-written list missing one fails at authorisation time
+with a confusing permissions error instead of at review time. Let it infer.
+
 ```bash
 # one-time: turn on the Apps Script API for your account
 open https://script.google.com/home/usersettings     # set "Google Apps Script API" to ON

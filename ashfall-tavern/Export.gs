@@ -303,7 +303,12 @@ var Exporter = (function () {
     var start = Date.now();
     var producedThisChunk = 0;
 
-    while (cursor.queue.length && (Date.now() - start) < ASHFALL.PREBAKE_BUDGET_MS) {
+    // Always generate at least one node per chunk. A chunk that returns
+    // `done:false` having produced nothing would leave the caller looping
+    // forever on an unchanged cursor, so forward progress is unconditional
+    // and the budget is only allowed to stop the SECOND node onward.
+    while (cursor.queue.length &&
+           (producedThisChunk === 0 || (Date.now() - start) < ASHFALL.PREBAKE_BUDGET_MS)) {
       var item = cursor.queue.shift();
       var res = Dialogue.generateLine(npcId, item.choiceText, item.stateJson);
       cursor.generated++;

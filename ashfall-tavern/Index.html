@@ -387,15 +387,29 @@ var App = (function () {
    */
   function doPrebake(npcId, depth) {
     var cursor = null;
+    var chunks = 0;
+    var MAX_CHUNKS = 60;
     DevPanel.prebakeProgress(2, 'starting breadth-first walk…', true);
 
     /**
-     * Runs one chunk and schedules the next.
+     * Runs one chunk and schedules the next. Refuses to keep looping on a
+     * cursor that is not advancing — a stalled server must surface as a
+     * message, never as an endless quiet retry.
      */
     function step() {
+      if (++chunks > MAX_CHUNKS) {
+        DevPanel.prebakeProgress(0, 'Pre-bake stopped after ' + MAX_CHUNKS +
+          ' chunks without finishing. Try a shallower depth.', false);
+        return;
+      }
       call('prebakeTree', [npcId, depth, cursor], function (res) {
         if (!res || !res.ok) {
           DevPanel.prebakeProgress(0, 'Pre-bake failed: ' + ((res && res.error) || 'unknown'), false);
+          return;
+        }
+        if (!res.done && !res.producedThisChunk) {
+          DevPanel.prebakeProgress(0, 'Pre-bake made no progress this pass — stopping ' +
+            'rather than retrying forever. ' + (res.message || ''), false);
           return;
         }
         var seen = res.generated || 0;
